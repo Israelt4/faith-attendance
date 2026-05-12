@@ -1433,7 +1433,13 @@ function Tabs({ T, tab, onChange }) {
 function OverviewTab({ T, dens, latest, prev, lastYearTotal, wow, yoy, k, latestRows, campusCards, onOpenRecord }) {
   if (!latest) return <div style={{ padding: 40, color: T.ink3 }}>No completed weeks of data.</div>;
 
-  // Hero: This week's total + two delta cards
+  const _ytdYr = parseInt(latest.weekOf.slice(0, 4));
+  const _cWks = k.completed.filter(w => parseInt(w.weekOf.slice(0, 4)) === _ytdYr && w.weekOf <= latest.weekOf);
+  const _ytdN = _cWks.length;
+  const ytdAvg = _ytdN > 0 ? _cWks.reduce((s, w) => s + w.total, 0) / _ytdN : null;
+  const _pWks = k.completed.filter(w => parseInt(w.weekOf.slice(0, 4)) === _ytdYr - 1).slice(0, _ytdN);
+  const lyYtdAvg = _pWks.length > 0 ? _pWks.reduce((s, w) => s + w.total, 0) / _pWks.length : null;
+  const ytdDelta = ytdAvg && lyYtdAvg ? (ytdAvg - lyYtdAvg) / lyYtdAvg * 100 : null;
   return (
     <div style={{ padding: `${dens ? 20 : 28}px ${dens ? 20 : 28}px` }}>
       {/* HERO */}
@@ -1455,9 +1461,9 @@ function OverviewTab({ T, dens, latest, prev, lastYearTotal, wow, yoy, k, latest
         {/* vs last week */}
         <DeltaCard T={T} dens={dens} title="vs last week" delta={wow}
         curN={latest.total} prevN={prev?.total} prevLabel={prev ? `Week of ${prev.weekOf}` : '—'} />
-        {/* vs same week last year */}
-        <DeltaCard T={T} dens={dens} title="vs same week last year" delta={yoy}
-        curN={latest.total} prevN={lastYearTotal} prevLabel={lastYearTotal ? `Same week, ${new Date(latest.weekOf).getFullYear() - 1}` : 'No data for that week last year'} />
+        {/* YTD avg */}
+        <DeltaCard T={T} dens={dens} title="YTD weekly avg" delta={ytdDelta}
+        curN={ytdAvg ? Math.round(ytdAvg) : null} prevN={lyYtdAvg ? Math.round(lyYtdAvg) : null} prevLabel={lyYtdAvg ? `${_ytdYr - 1} avg · ${_ytdN} wks` : 'No prior year data'} />
       </div>
 
       {(() => {
@@ -2379,6 +2385,13 @@ function MOverview({ T, completed, weekIdx, setWeekIdx, ALL, k, onOpenCampus, on
   const wow = prev ? (w.total - prev.total) / prev.total * 100 : null;
   const lastYearTotal = window.agg.sameWeekLastYear(ALL, w.weekOf);
   const yoy = lastYearTotal ? (w.total - lastYearTotal) / lastYearTotal * 100 : null;
+  const _ytdYr = parseInt(w.weekOf.slice(0, 4));
+  const _cWks = completed.filter(wk => parseInt(wk.weekOf.slice(0, 4)) === _ytdYr && wk.weekOf <= w.weekOf);
+  const _ytdN = _cWks.length;
+  const ytdAvg = _ytdN > 0 ? _cWks.reduce((s, wk) => s + wk.total, 0) / _ytdN : null;
+  const _pWks = completed.filter(wk => parseInt(wk.weekOf.slice(0, 4)) === _ytdYr - 1).slice(0, _ytdN);
+  const lyYtdAvg = _pWks.length > 0 ? _pWks.reduce((s, wk) => s + wk.total, 0) / _pWks.length : null;
+  const ytdDelta = ytdAvg && lyYtdAvg ? (ytdAvg - lyYtdAvg) / lyYtdAvg * 100 : null;
 
   const wkRows = ALL.filter((r) => r.weekOf === w.weekOf);
   const prevRows = prev ? ALL.filter((r) => r.weekOf === prev.weekOf) : [];
@@ -2426,7 +2439,7 @@ function MOverview({ T, completed, weekIdx, setWeekIdx, ALL, k, onOpenCampus, on
       {/* Two delta cards */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
         <MDelta T={T} label="vs last week" delta={wow} cur={w.total} prevN={prev?.total} />
-        <MDelta T={T} label="vs last year" delta={yoy} cur={w.total} prevN={lastYearTotal} />
+        <MDelta T={T} label="YTD avg vs last yr" delta={ytdDelta} cur={ytdAvg ? Math.round(ytdAvg) : w.total} prevN={lyYtdAvg ? Math.round(lyYtdAvg) : null} />
       </div>
 
       {(() => {
@@ -3541,6 +3554,7 @@ function EventsTab({ T, dens }) {
 
   const eventsWithData = events.map(ev => ({ ev, years: buildEventData(ev) }));
   const hasData = eventsWithData.some(e => e.years.length > 0);
+  const [openRow, setOpenRow] = React.useState(null);
 
   return (
     <div style={{ padding: dens ? '16px 20px' : '24px 28px', overflowY: 'auto', height: '100%' }}>
@@ -3575,20 +3589,54 @@ function EventsTab({ T, dens }) {
                   const delta = prior ? (y.total - prior.total) / prior.total * 100 : null;
                   const absChg = prior ? y.total - prior.total : null;
                   const up = delta != null && delta >= 0;
+                  const isOpen = openRow && openRow.eventId === ev.id && openRow.year === y.year;
+                  const drillRows = isOpen ? ALL.filter(r => r.eventId === ev.id && r.year === y.year).sort((a, b) => a.date < b.date ? -1 : 1) : [];
                   return (
-                    <tr key={y.year} style={{ borderBottom: `1px solid ${T.ruleLight || T.rule}` }}>
-                      <td style={{ padding: '9px 14px', fontFamily: T.mono, fontSize: 12, color: T.ink2 }}>{y.year}</td>
-                      <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: T.display, fontSize: 16, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{y.total.toLocaleString()}</td>
-                      <td style={{ padding: '9px 14px', textAlign: 'right' }}>
-                        {delta == null ? <span style={{ fontFamily: T.mono, fontSize: 11, color: T.ink3 }}>—</span> : (
-                          <span style={{ color: up ? T.good : T.bad }}>
-                            <div style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 600 }}>{(up ? '+' : '') + delta.toFixed(1) + '%'}</div>
-                            <div style={{ fontFamily: T.mono, fontSize: 9.5, fontVariantNumeric: 'tabular-nums', marginTop: 1 }}>{(absChg >= 0 ? '+' : '') + Math.round(absChg).toLocaleString()}</div>
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: '9px 14px', textAlign: 'right', color: T.ink3, fontSize: 12 }}>{y.serviceCount}</td>
-                    </tr>
+                    <React.Fragment key={y.year}>
+                      <tr onClick={() => setOpenRow(isOpen ? null : { eventId: ev.id, year: y.year })} style={{ borderBottom: isOpen ? 'none' : `1px solid ${T.ruleLight || T.rule}`, cursor: 'pointer', background: isOpen ? (T.cardAlt || 'rgba(0,0,0,0.03)') : 'transparent' }}>
+                        <td style={{ padding: '9px 14px', fontFamily: T.mono, fontSize: 12, color: T.ink2 }}>
+                          <span style={{ marginRight: 6, fontSize: 9, color: T.ink3 }}>{isOpen ? '▾' : '▸'}</span>{y.year}
+                        </td>
+                        <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: T.display, fontSize: 16, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{y.total.toLocaleString()}</td>
+                        <td style={{ padding: '9px 14px', textAlign: 'right' }}>
+                          {delta == null ? <span style={{ fontFamily: T.mono, fontSize: 11, color: T.ink3 }}>—</span> : (
+                            <span style={{ color: up ? T.good : T.bad }}>
+                              <div style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 600 }}>{(up ? '+' : '') + delta.toFixed(1) + '%'}</div>
+                              <div style={{ fontFamily: T.mono, fontSize: 9.5, fontVariantNumeric: 'tabular-nums', marginTop: 1 }}>{(absChg >= 0 ? '+' : '') + Math.round(absChg).toLocaleString()}</div>
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: '9px 14px', textAlign: 'right', color: T.ink3, fontSize: 12 }}>{y.serviceCount}</td>
+                      </tr>
+                      {isOpen && (
+                        <tr style={{ borderBottom: `1px solid ${T.ruleLight || T.rule}` }}>
+                          <td colSpan={4} style={{ padding: '0 0 10px', background: T.cardAlt || 'rgba(0,0,0,0.02)' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: T.sans, fontSize: 11.5 }}>
+                              <thead>
+                                <tr style={{ borderBottom: `1px solid ${T.rule}` }}>
+                                  {[['Date','left'],['Campus','left'],['Service','left'],['Main','right'],['FaithKids','right'],['Mainstream','right'],['Total','right']].map(([l,a]) => (
+                                    <th key={l} style={{ padding: '7px 14px', textAlign: a, fontFamily: T.mono, fontSize: 8.5, letterSpacing: '.14em', textTransform: 'uppercase', color: T.ink3, fontWeight: 500 }}>{l}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {drillRows.map((r, idx) => (
+                                  <tr key={idx} style={{ borderBottom: idx < drillRows.length - 1 ? `1px solid ${T.ruleLight || T.rule}` : 'none' }}>
+                                    <td style={{ padding: '7px 14px', fontFamily: T.mono, fontSize: 11, color: T.ink2 }}>{r.date}</td>
+                                    <td style={{ padding: '7px 14px', fontWeight: 600 }}>{r.campus}</td>
+                                    <td style={{ padding: '7px 14px', fontStyle: 'italic', fontFamily: T.display, fontSize: 12.5, color: T.ink2 }}>{window.serviceLabel(r)}</td>
+                                    <td style={{ padding: '7px 14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.main ? T.ink : T.ink3 }}>{r.main ?? '—'}</td>
+                                    <td style={{ padding: '7px 14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.fk ? T.ink : T.ink3 }}>{r.fk ?? '—'}</td>
+                                    <td style={{ padding: '7px 14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.ms ? T.ink : T.ink3 }}>{r.ms ?? '—'}</td>
+                                    <td style={{ padding: '7px 14px', textAlign: 'right', fontFamily: T.display, fontSize: 14, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{(r.total || 0).toLocaleString()}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })}
               </tbody>
@@ -3620,6 +3668,7 @@ function MEventsTab({ T }) {
 
   const eventsWithData = events.map(ev => ({ ev, years: buildEventData(ev) }));
   const hasData = eventsWithData.some(e => e.years.length > 0);
+  const [openRow, setOpenRow] = React.useState(null);
 
   return (
     <div style={{ padding: '14px 14px 80px' }}>
@@ -3642,21 +3691,39 @@ function MEventsTab({ T }) {
               const delta = prior ? (y.total - prior.total) / prior.total * 100 : null;
               const absChg = prior ? y.total - prior.total : null;
               const up = delta != null && delta >= 0;
+              const isOpen = openRow && openRow.eventId === ev.id && openRow.year === y.year;
+              const drillRows = isOpen ? ALL.filter(r => r.eventId === ev.id && r.year === y.year).sort((a, b) => a.date < b.date ? -1 : 1) : [];
               return (
-                <div key={y.year} style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', borderBottom: i < years.length - 1 ? `1px solid ${T.ruleLight || T.rule}` : 'none' }}>
-                  <div style={{ fontFamily: T.mono, fontSize: 12, color: T.ink2, width: 48 }}>{y.year}</div>
-                  <div style={{ flex: 1, fontFamily: T.display, fontSize: 18, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{y.total.toLocaleString()}</div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontFamily: T.mono, fontSize: 11.5, fontWeight: 600, color: delta == null ? T.ink3 : (up ? T.good : T.bad) }}>
-                      {delta == null ? '—' : (up ? '+' : '') + delta.toFixed(1) + '%'}
+                <React.Fragment key={y.year}>
+                  <div onClick={() => setOpenRow(isOpen ? null : { eventId: ev.id, year: y.year })} style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', borderBottom: (isOpen || i < years.length - 1) ? `1px solid ${T.ruleLight || T.rule}` : 'none', cursor: 'pointer', background: isOpen ? (T.cardAlt || 'rgba(0,0,0,0.03)') : 'transparent' }}>
+                    <div style={{ fontFamily: T.mono, fontSize: 12, color: T.ink2, width: 52, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontSize: 8, color: T.ink3 }}>{isOpen ? '▾' : '▸'}</span>{y.year}
                     </div>
-                    {absChg != null && (
-                      <div style={{ fontFamily: T.mono, fontSize: 9.5, fontVariantNumeric: 'tabular-nums', color: up ? T.good : T.bad, fontWeight: 600, marginTop: 1 }}>
-                        {(absChg >= 0 ? '+' : '') + Math.round(absChg).toLocaleString()}
+                    <div style={{ flex: 1, fontFamily: T.display, fontSize: 18, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{y.total.toLocaleString()}</div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontFamily: T.mono, fontSize: 11.5, fontWeight: 600, color: delta == null ? T.ink3 : (up ? T.good : T.bad) }}>
+                        {delta == null ? '—' : (up ? '+' : '') + delta.toFixed(1) + '%'}
                       </div>
-                    )}
+                      {absChg != null && (
+                        <div style={{ fontFamily: T.mono, fontSize: 9.5, fontVariantNumeric: 'tabular-nums', color: up ? T.good : T.bad, fontWeight: 600, marginTop: 1 }}>
+                          {(absChg >= 0 ? '+' : '') + Math.round(absChg).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
+                  {isOpen && (
+                    <div style={{ borderBottom: `1px solid ${T.ruleLight || T.rule}`, background: T.cardAlt || 'rgba(0,0,0,0.02)', padding: '8px 14px 12px' }}>
+                      {drillRows.map((r, idx) => (
+                        <div key={idx} style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '6px 0', borderBottom: idx < drillRows.length - 1 ? `1px solid ${T.ruleLight || T.rule}` : 'none' }}>
+                          <div style={{ fontFamily: T.mono, fontSize: 10.5, color: T.ink3, flexShrink: 0, width: 84 }}>{r.date}</div>
+                          <div style={{ fontFamily: T.sans, fontSize: 12, fontWeight: 600, flexShrink: 0, width: 60 }}>{r.campus}</div>
+                          <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 12, color: T.ink2, flex: 1, minWidth: 0 }}>{window.serviceLabel(r)}</div>
+                          <div style={{ fontFamily: T.display, fontSize: 14, fontWeight: 600, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{(r.total || 0).toLocaleString()}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </React.Fragment>
               );
             })}
           </div>
@@ -3692,6 +3759,7 @@ function App() {
   const [isMobile, setIsMobile] = React.useState(window.innerWidth < MOBILE_BP);
   const [showEntry, setShowEntry] = React.useState(false);
   const [dataVersion, setDataVersion] = React.useState(0);
+  const [refreshVersion, setRefreshVersion] = React.useState(0);
   const [t, setT] = window.useTweaks({ density: 'comfortable' });
 
   React.useEffect(() => {
@@ -3710,6 +3778,11 @@ function App() {
     setDataVersion(v => v + 1);
   };
 
+  const handleDataChange = () => {
+    window.mergeAttendance();
+    setRefreshVersion(v => v + 1);
+  };
+
   if (isMobile) {
     return (
       <React.Fragment>
@@ -3721,7 +3794,7 @@ function App() {
               <StatusBarRight/>
             </div>
             <div className="device-content">
-              <window.MobileView key={dataVersion} onAddEntry={() => setShowEntry(true)} onDataChange={handleSaved} />
+              <window.MobileView key={dataVersion} refreshVersion={refreshVersion} onAddEntry={() => setShowEntry(true)} onDataChange={handleDataChange} />
             </div>
             <div className="device-home"/>
           </div>
@@ -3739,7 +3812,7 @@ function App() {
 
   return (
     <React.Fragment>
-      <window.MainView key={dataVersion} density={t.density} onDataChange={handleSaved} />
+      <window.MainView key={dataVersion} refreshVersion={refreshVersion} density={t.density} onDataChange={handleDataChange} />
       <window.AddEntryFAB onClick={() => setShowEntry(true)} />
       {showEntry && (
         <window.DataEntryModal
