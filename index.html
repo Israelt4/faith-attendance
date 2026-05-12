@@ -2014,7 +2014,7 @@ const MM_THEME = {
   mono: '"JetBrains Mono", "SF Mono", monospace'
 };
 
-function MobileView() {
+function MobileView({ onAddEntry }) {
   const T = MM_THEME;
   const ALL = window.ATTENDANCE;
   const TODAY = new Date();
@@ -2107,7 +2107,7 @@ function MobileView() {
       fontFamily: T.sans, display: 'flex', flexDirection: 'column', overflow: 'hidden',
       position: 'relative'
     }}>
-      <MobileHeader T={T} tab={tab} onShare={shareSummary} weekLabel={completed[weekIdx]?.weekOf} />
+      <MobileHeader T={T} tab={tab} onShare={shareSummary} weekLabel={completed[weekIdx]?.weekOf} onAddEntry={onAddEntry} />
 
       {/* Pull indicator */}
       <div style={{
@@ -2157,7 +2157,7 @@ function Spinner({ T, label }) {
   );
 }
 
-function MobileHeader({ T, tab, onShare, weekLabel }) {
+function MobileHeader({ T, tab, onShare, weekLabel, onAddEntry }) {
   const titles = { overview: 'This week', trends: 'Trends', campuses: 'Campuses', records: 'Records' };
   return (
     <div style={{
@@ -2174,6 +2174,17 @@ function MobileHeader({ T, tab, onShare, weekLabel }) {
           <div style={{ fontFamily: T.display, fontSize: 19, fontWeight: 500, letterSpacing: '-0.01em', marginTop: 1, lineHeight: 1.1 }}>{titles[tab]}</div>
         </div>
       </div>
+      {onAddEntry && (
+        <button onClick={onAddEntry} aria-label="Add entry" style={{
+          width: 38, height: 38, borderRadius: 999, border: 'none', background: T.wine,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: '#fbf6ec', cursor: 'pointer', flexShrink: 0
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+        </button>
+      )}
       <button onClick={onShare} aria-label="Share" style={{
         width: 38, height: 38, borderRadius: 999, border: `1px solid ${T.rule}`, background: T.card,
         display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.ink2, cursor: 'pointer', flexShrink: 0
@@ -3166,13 +3177,12 @@ function App() {
               <StatusBarRight/>
             </div>
             <div className="device-content">
-              <window.MobileView key={dataVersion}/>
+              <window.MobileView key={dataVersion} onAddEntry={() => setShowEntry(true)}/>
             </div>
             <div className="device-home"/>
           </div>
           <div className="desktop-caption">Faith Church · Mobile Brief · resize narrow or open on iPhone for fullscreen</div>
         </div>
-        <window.AddEntryFAB mobile={true} onClick={() => setShowEntry(true)} />
         {showEntry && (
           <window.DataEntryModal
             onClose={() => setShowEntry(false)}
