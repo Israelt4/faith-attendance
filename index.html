@@ -6,16 +6,20 @@
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-title" content="Faith Brief"/>
 <meta name="theme-color" content="#f7f1e6"/>
-<title>Faith Church · Attendance Brief</title>
+<title>Faith Church · Attendance</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
 <link rel="apple-touch-icon" href='data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="%237d3a35"/><path d="M14 48h36M18 48V20l14-8 14 8v28M24 48V30h16v18" stroke="%23fbf6ec" stroke-width="3" fill="none" stroke-linejoin="round"/></svg>'/>
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; background: #1a120c; overscroll-behavior: none; }
+  html, body { margin: 0; padding: 0; height: 100%; }
   body { font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif; color: #231811; }
   *, *::before, *::after { box-sizing: border-box; }
   #root { height: 100%; width: 100%; }
+  /* Default background by viewport — JS keeps these in sync after mount */
+  @media (max-width: 899px) { html, body { background: #1a120c; } }
+  @media (min-width: 900px) { html, body { background: #f7f1e6; } }
+  /* ── Mobile shell ── */
   .stage {
     width: 100%; height: 100%;
     display: flex; align-items: center; justify-content: center;
@@ -208,8 +212,6 @@ window.groupCampusBuckets = function(rows, campusOrder) {
 };
 
 
-// exportCSV: data.js already provides localStorage plumbing, serviceLabel,
-// bucketOf, groupCampusBuckets, and mergeAttendance. We only add exportCSV.
 window.exportCSV = function() {
   var rows = window.ATTENDANCE;
   var cols = ['date','campus','cat','main','fk','ms','total','notes','weekOf','year','month','quarter'];
@@ -226,6 +228,579 @@ window.exportCSV = function() {
   a.download = 'faith-attendance.csv';
   a.click();
 };
+
+</script>
+
+<script type="text/babel">
+
+// tweaks-panel.jsx
+// Reusable Tweaks shell + form-control helpers.
+//
+// Owns the host protocol (listens for __activate_edit_mode / __deactivate_edit_mode,
+// posts __edit_mode_available / __edit_mode_set_keys / __edit_mode_dismissed) so
+// individual prototypes don't re-roll it. Ships a consistent set of controls so you
+// don't hand-draw <input type="range">, segmented radios, steppers, etc.
+//
+// Usage (in an HTML file that loads React + Babel):
+//
+//   const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+//     "primaryColor": "#D97757",
+//     "palette": ["#D97757", "#29261b", "#f6f4ef"],
+//     "fontSize": 16,
+//     "density": "regular",
+//     "dark": false
+//   }/*EDITMODE-END*/;
+//
+//   function App() {
+//     const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+//     return (
+//       <div style={{ fontSize: t.fontSize, color: t.primaryColor }}>
+//         Hello
+//         <TweaksPanel>
+//           <TweakSection label="Typography" />
+//           <TweakSlider label="Font size" value={t.fontSize} min={10} max={32} unit="px"
+//                        onChange={(v) => setTweak('fontSize', v)} />
+//           <TweakRadio  label="Density" value={t.density}
+//                        options={['compact', 'regular', 'comfy']}
+//                        onChange={(v) => setTweak('density', v)} />
+//           <TweakSection label="Theme" />
+//           <TweakColor  label="Primary" value={t.primaryColor}
+//                        options={['#D97757', '#2A6FDB', '#1F8A5B', '#7A5AE0']}
+//                        onChange={(v) => setTweak('primaryColor', v)} />
+//           <TweakColor  label="Palette" value={t.palette}
+//                        options={[['#D97757', '#29261b', '#f6f4ef'],
+//                                  ['#475569', '#0f172a', '#f1f5f9']]}
+//                        onChange={(v) => setTweak('palette', v)} />
+//           <TweakToggle label="Dark mode" value={t.dark}
+//                        onChange={(v) => setTweak('dark', v)} />
+//         </TweaksPanel>
+//       </div>
+//     );
+//   }
+//
+// ─────────────────────────────────────────────────────────────────────────────
+
+const __TWEAKS_STYLE = `
+  .twk-panel{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:280px;
+    max-height:calc(100vh - 32px);display:flex;flex-direction:column;
+    transform:scale(var(--dc-inv-zoom,1));transform-origin:bottom right;
+    background:rgba(250,249,247,.78);color:#29261b;
+    -webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);
+    border:.5px solid rgba(255,255,255,.6);border-radius:14px;
+    box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 12px 40px rgba(0,0,0,.18);
+    font:11.5px/1.4 ui-sans-serif,system-ui,-apple-system,sans-serif;overflow:hidden}
+  .twk-hd{display:flex;align-items:center;justify-content:space-between;
+    padding:10px 8px 10px 14px;cursor:move;user-select:none}
+  .twk-hd b{font-size:12px;font-weight:600;letter-spacing:.01em}
+  .twk-x{appearance:none;border:0;background:transparent;color:rgba(41,38,27,.55);
+    width:22px;height:22px;border-radius:6px;cursor:default;font-size:13px;line-height:1}
+  .twk-x:hover{background:rgba(0,0,0,.06);color:#29261b}
+  .twk-body{padding:2px 14px 14px;display:flex;flex-direction:column;gap:10px;
+    overflow-y:auto;overflow-x:hidden;min-height:0;
+    scrollbar-width:thin;scrollbar-color:rgba(0,0,0,.15) transparent}
+  .twk-body::-webkit-scrollbar{width:8px}
+  .twk-body::-webkit-scrollbar-track{background:transparent;margin:2px}
+  .twk-body::-webkit-scrollbar-thumb{background:rgba(0,0,0,.15);border-radius:4px;
+    border:2px solid transparent;background-clip:content-box}
+  .twk-body::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,.25);
+    border:2px solid transparent;background-clip:content-box}
+  .twk-row{display:flex;flex-direction:column;gap:5px}
+  .twk-row-h{flex-direction:row;align-items:center;justify-content:space-between;gap:10px}
+  .twk-lbl{display:flex;justify-content:space-between;align-items:baseline;
+    color:rgba(41,38,27,.72)}
+  .twk-lbl>span:first-child{font-weight:500}
+  .twk-val{color:rgba(41,38,27,.5);font-variant-numeric:tabular-nums}
+
+  .twk-sect{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+    color:rgba(41,38,27,.45);padding:10px 0 0}
+  .twk-sect:first-child{padding-top:0}
+
+  .twk-field{appearance:none;width:100%;height:26px;padding:0 8px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:7px;
+    background:rgba(255,255,255,.6);color:inherit;font:inherit;outline:none}
+  .twk-field:focus{border-color:rgba(0,0,0,.25);background:rgba(255,255,255,.85)}
+  select.twk-field{padding-right:22px;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='rgba(0,0,0,.5)' d='M0 0h10L5 6z'/></svg>");
+    background-repeat:no-repeat;background-position:right 8px center}
+
+  .twk-slider{appearance:none;-webkit-appearance:none;width:100%;height:4px;margin:6px 0;
+    border-radius:999px;background:rgba(0,0,0,.12);outline:none}
+  .twk-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+    width:14px;height:14px;border-radius:50%;background:#fff;
+    border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+  .twk-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;
+    background:#fff;border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+
+  .twk-seg{position:relative;display:flex;padding:2px;border-radius:8px;
+    background:rgba(0,0,0,.06);user-select:none}
+  .twk-seg-thumb{position:absolute;top:2px;bottom:2px;border-radius:6px;
+    background:rgba(255,255,255,.9);box-shadow:0 1px 2px rgba(0,0,0,.12);
+    transition:left .15s cubic-bezier(.3,.7,.4,1),width .15s}
+  .twk-seg.dragging .twk-seg-thumb{transition:none}
+  .twk-seg button{appearance:none;position:relative;z-index:1;flex:1;border:0;
+    background:transparent;color:inherit;font:inherit;font-weight:500;min-height:22px;
+    border-radius:6px;cursor:default;padding:4px 6px;line-height:1.2;
+    overflow-wrap:anywhere}
+
+  .twk-toggle{position:relative;width:32px;height:18px;border:0;border-radius:999px;
+    background:rgba(0,0,0,.15);transition:background .15s;cursor:default;padding:0}
+  .twk-toggle[data-on="1"]{background:#34c759}
+  .twk-toggle i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+    background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+  .twk-toggle[data-on="1"] i{transform:translateX(14px)}
+
+  .twk-num{display:flex;align-items:center;height:26px;padding:0 0 0 8px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:7px;background:rgba(255,255,255,.6)}
+  .twk-num-lbl{font-weight:500;color:rgba(41,38,27,.6);cursor:ew-resize;
+    user-select:none;padding-right:8px}
+  .twk-num input{flex:1;min-width:0;height:100%;border:0;background:transparent;
+    font:inherit;font-variant-numeric:tabular-nums;text-align:right;padding:0 8px 0 0;
+    outline:none;color:inherit;-moz-appearance:textfield}
+  .twk-num input::-webkit-inner-spin-button,.twk-num input::-webkit-outer-spin-button{
+    -webkit-appearance:none;margin:0}
+  .twk-num-unit{padding-right:8px;color:rgba(41,38,27,.45)}
+
+  .twk-btn{appearance:none;height:26px;padding:0 12px;border:0;border-radius:7px;
+    background:rgba(0,0,0,.78);color:#fff;font:inherit;font-weight:500;cursor:default}
+  .twk-btn:hover{background:rgba(0,0,0,.88)}
+  .twk-btn.secondary{background:rgba(0,0,0,.06);color:inherit}
+  .twk-btn.secondary:hover{background:rgba(0,0,0,.1)}
+
+  .twk-swatch{appearance:none;-webkit-appearance:none;width:56px;height:22px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:6px;padding:0;cursor:default;
+    background:transparent;flex-shrink:0}
+  .twk-swatch::-webkit-color-swatch-wrapper{padding:0}
+  .twk-swatch::-webkit-color-swatch{border:0;border-radius:5.5px}
+  .twk-swatch::-moz-color-swatch{border:0;border-radius:5.5px}
+
+  .twk-chips{display:flex;gap:6px}
+  .twk-chip{position:relative;appearance:none;flex:1;min-width:0;height:46px;
+    padding:0;border:0;border-radius:6px;overflow:hidden;cursor:default;
+    box-shadow:0 0 0 .5px rgba(0,0,0,.12),0 1px 2px rgba(0,0,0,.06);
+    transition:transform .12s cubic-bezier(.3,.7,.4,1),box-shadow .12s}
+  .twk-chip:hover{transform:translateY(-1px);
+    box-shadow:0 0 0 .5px rgba(0,0,0,.18),0 4px 10px rgba(0,0,0,.12)}
+  .twk-chip[data-on="1"]{box-shadow:0 0 0 1.5px rgba(0,0,0,.85),
+    0 2px 6px rgba(0,0,0,.15)}
+  .twk-chip>span{position:absolute;top:0;bottom:0;right:0;width:34%;
+    display:flex;flex-direction:column;box-shadow:-1px 0 0 rgba(0,0,0,.1)}
+  .twk-chip>span>i{flex:1;box-shadow:0 -1px 0 rgba(0,0,0,.1)}
+  .twk-chip>span>i:first-child{box-shadow:none}
+  .twk-chip svg{position:absolute;top:6px;left:6px;width:13px;height:13px;
+    filter:drop-shadow(0 1px 1px rgba(0,0,0,.3))}
+`;
+
+// ── useTweaks ───────────────────────────────────────────────────────────────
+// Single source of truth for tweak values. setTweak persists via the host
+// (__edit_mode_set_keys → host rewrites the EDITMODE block on disk).
+function useTweaks(defaults) {
+  const [values, setValues] = React.useState(defaults);
+  // Accepts either setTweak('key', value) or setTweak({ key: value, ... }) so a
+  // useState-style call doesn't write a "[object Object]" key into the persisted
+  // JSON block.
+  const setTweak = React.useCallback((keyOrEdits, val) => {
+    const edits = typeof keyOrEdits === 'object' && keyOrEdits !== null
+      ? keyOrEdits : { [keyOrEdits]: val };
+    setValues((prev) => ({ ...prev, ...edits }));
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits }, '*');
+    // Same-window signal so in-page listeners (deck-stage rail thumbnails)
+    // can react — the parent message only reaches the host, not peers.
+    window.dispatchEvent(new CustomEvent('tweakchange', { detail: edits }));
+  }, []);
+  return [values, setTweak];
+}
+
+// ── TweaksPanel ─────────────────────────────────────────────────────────────
+// Floating shell. Registers the protocol listener BEFORE announcing
+// availability — if the announce ran first, the host's activate could land
+// before our handler exists and the toolbar toggle would silently no-op.
+// The close button posts __edit_mode_dismissed so the host's toolbar toggle
+// flips off in lockstep; the host echoes __deactivate_edit_mode back which
+// is what actually hides the panel.
+function TweaksPanel({ title = 'Tweaks', noDeckControls = false, children }) {
+  const [open, setOpen] = React.useState(false);
+  const dragRef = React.useRef(null);
+  // Auto-inject a rail toggle when a <deck-stage> is on the page. The
+  // toggle drives the deck's per-viewer _railVisible via window message;
+  // state is mirrored from the same localStorage key the deck reads so
+  // the control reflects reality across reloads. The mechanism is the
+  // message — authors who want custom placement can post it directly
+  // and pass noDeckControls to suppress this one.
+  const hasDeckStage = React.useMemo(
+    () => typeof document !== 'undefined' && !!document.querySelector('deck-stage'),
+    [],
+  );
+  // Hide the toggle until the host has actually enabled the rail (the
+  // __omelette_rail_enabled window message, posted only when the
+  // omelette_deck_rail_enabled flag is on for this user). The initial read
+  // covers TweaksPanel mounting after the message already arrived; the
+  // listener covers the common case of mounting first.
+  const [railEnabled, setRailEnabled] = React.useState(
+    () => hasDeckStage && !!document.querySelector('deck-stage')?._railEnabled,
+  );
+  React.useEffect(() => {
+    if (!hasDeckStage || railEnabled) return undefined;
+    const onMsg = (e) => {
+      if (e.data && e.data.type === '__omelette_rail_enabled') setRailEnabled(true);
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, [hasDeckStage, railEnabled]);
+  const [railVisible, setRailVisible] = React.useState(() => {
+    try { return localStorage.getItem('deck-stage.railVisible') !== '0'; } catch (e) { return true; }
+  });
+  const toggleRail = (on) => {
+    setRailVisible(on);
+    window.postMessage({ type: '__deck_rail_visible', on }, '*');
+  };
+  const offsetRef = React.useRef({ x: 16, y: 16 });
+  const PAD = 16;
+
+  const clampToViewport = React.useCallback(() => {
+    const panel = dragRef.current;
+    if (!panel) return;
+    const w = panel.offsetWidth, h = panel.offsetHeight;
+    const maxRight = Math.max(PAD, window.innerWidth - w - PAD);
+    const maxBottom = Math.max(PAD, window.innerHeight - h - PAD);
+    offsetRef.current = {
+      x: Math.min(maxRight, Math.max(PAD, offsetRef.current.x)),
+      y: Math.min(maxBottom, Math.max(PAD, offsetRef.current.y)),
+    };
+    panel.style.right = offsetRef.current.x + 'px';
+    panel.style.bottom = offsetRef.current.y + 'px';
+  }, []);
+
+  React.useEffect(() => {
+    if (!open) return;
+    clampToViewport();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', clampToViewport);
+      return () => window.removeEventListener('resize', clampToViewport);
+    }
+    const ro = new ResizeObserver(clampToViewport);
+    ro.observe(document.documentElement);
+    return () => ro.disconnect();
+  }, [open, clampToViewport]);
+
+  React.useEffect(() => {
+    const onMsg = (e) => {
+      const t = e?.data?.type;
+      if (t === '__activate_edit_mode') setOpen(true);
+      else if (t === '__deactivate_edit_mode') setOpen(false);
+    };
+    window.addEventListener('message', onMsg);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  const dismiss = () => {
+    setOpen(false);
+    window.parent.postMessage({ type: '__edit_mode_dismissed' }, '*');
+  };
+
+  const onDragStart = (e) => {
+    const panel = dragRef.current;
+    if (!panel) return;
+    const r = panel.getBoundingClientRect();
+    const sx = e.clientX, sy = e.clientY;
+    const startRight = window.innerWidth - r.right;
+    const startBottom = window.innerHeight - r.bottom;
+    const move = (ev) => {
+      offsetRef.current = {
+        x: startRight - (ev.clientX - sx),
+        y: startBottom - (ev.clientY - sy),
+      };
+      clampToViewport();
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
+  if (!open) return null;
+  return (
+    <>
+      <style>{__TWEAKS_STYLE}</style>
+      <div ref={dragRef} className="twk-panel" data-noncommentable=""
+           style={{ right: offsetRef.current.x, bottom: offsetRef.current.y }}>
+        <div className="twk-hd" onMouseDown={onDragStart}>
+          <b>{title}</b>
+          <button className="twk-x" aria-label="Close tweaks"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={dismiss}>✕</button>
+        </div>
+        <div className="twk-body">
+          {children}
+          {hasDeckStage && railEnabled && !noDeckControls && (
+            <TweakSection label="Deck">
+              <TweakToggle label="Thumbnail rail" value={railVisible} onChange={toggleRail} />
+            </TweakSection>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Layout helpers ──────────────────────────────────────────────────────────
+
+function TweakSection({ label, children }) {
+  return (
+    <>
+      <div className="twk-sect">{label}</div>
+      {children}
+    </>
+  );
+}
+
+function TweakRow({ label, value, children, inline = false }) {
+  return (
+    <div className={inline ? 'twk-row twk-row-h' : 'twk-row'}>
+      <div className="twk-lbl">
+        <span>{label}</span>
+        {value != null && <span className="twk-val">{value}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ── Controls ────────────────────────────────────────────────────────────────
+
+function TweakSlider({ label, value, min = 0, max = 100, step = 1, unit = '', onChange }) {
+  return (
+    <TweakRow label={label} value={`${value}${unit}`}>
+      <input type="range" className="twk-slider" min={min} max={max} step={step}
+             value={value} onChange={(e) => onChange(Number(e.target.value))} />
+    </TweakRow>
+  );
+}
+
+function TweakToggle({ label, value, onChange }) {
+  return (
+    <div className="twk-row twk-row-h">
+      <div className="twk-lbl"><span>{label}</span></div>
+      <button type="button" className="twk-toggle" data-on={value ? '1' : '0'}
+              role="switch" aria-checked={!!value}
+              onClick={() => onChange(!value)}><i /></button>
+    </div>
+  );
+}
+
+function TweakRadio({ label, value, options, onChange }) {
+  const trackRef = React.useRef(null);
+  const [dragging, setDragging] = React.useState(false);
+  // The active value is read by pointer-move handlers attached for the lifetime
+  // of a drag — ref it so a stale closure doesn't fire onChange for every move.
+  const valueRef = React.useRef(value);
+  valueRef.current = value;
+
+  // Segments wrap mid-word once per-segment width runs out. The track is
+  // ~248px (280 panel − 28 body pad − 4 seg pad), each button loses 12px
+  // to its own padding, and 11.5px system-ui averages ~6.3px/char — so 2
+  // options fit ~16 chars each, 3 fit ~10. Past that (or >3 options), fall
+  // back to a dropdown rather than wrap.
+  const labelLen = (o) => String(typeof o === 'object' ? o.label : o).length;
+  const maxLen = options.reduce((m, o) => Math.max(m, labelLen(o)), 0);
+  const fitsAsSegments = maxLen <= ({ 2: 16, 3: 10 }[options.length] ?? 0);
+  if (!fitsAsSegments) {
+    // <select> emits strings — map back to the original option value so the
+    // fallback stays type-preserving (numbers, booleans) like the segment path.
+    const resolve = (s) => {
+      const m = options.find((o) => String(typeof o === 'object' ? o.value : o) === s);
+      return m === undefined ? s : typeof m === 'object' ? m.value : m;
+    };
+    return <TweakSelect label={label} value={value} options={options}
+                        onChange={(s) => onChange(resolve(s))} />;
+  }
+  const opts = options.map((o) => (typeof o === 'object' ? o : { value: o, label: o }));
+  const idx = Math.max(0, opts.findIndex((o) => o.value === value));
+  const n = opts.length;
+
+  const segAt = (clientX) => {
+    const r = trackRef.current.getBoundingClientRect();
+    const inner = r.width - 4;
+    const i = Math.floor(((clientX - r.left - 2) / inner) * n);
+    return opts[Math.max(0, Math.min(n - 1, i))].value;
+  };
+
+  const onPointerDown = (e) => {
+    setDragging(true);
+    const v0 = segAt(e.clientX);
+    if (v0 !== valueRef.current) onChange(v0);
+    const move = (ev) => {
+      if (!trackRef.current) return;
+      const v = segAt(ev.clientX);
+      if (v !== valueRef.current) onChange(v);
+    };
+    const up = () => {
+      setDragging(false);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  return (
+    <TweakRow label={label}>
+      <div ref={trackRef} role="radiogroup" onPointerDown={onPointerDown}
+           className={dragging ? 'twk-seg dragging' : 'twk-seg'}>
+        <div className="twk-seg-thumb"
+             style={{ left: `calc(2px + ${idx} * (100% - 4px) / ${n})`,
+                      width: `calc((100% - 4px) / ${n})` }} />
+        {opts.map((o) => (
+          <button key={o.value} type="button" role="radio" aria-checked={o.value === value}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </TweakRow>
+  );
+}
+
+function TweakSelect({ label, value, options, onChange }) {
+  return (
+    <TweakRow label={label}>
+      <select className="twk-field" value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((o) => {
+          const v = typeof o === 'object' ? o.value : o;
+          const l = typeof o === 'object' ? o.label : o;
+          return <option key={v} value={v}>{l}</option>;
+        })}
+      </select>
+    </TweakRow>
+  );
+}
+
+function TweakText({ label, value, placeholder, onChange }) {
+  return (
+    <TweakRow label={label}>
+      <input className="twk-field" type="text" value={value} placeholder={placeholder}
+             onChange={(e) => onChange(e.target.value)} />
+    </TweakRow>
+  );
+}
+
+function TweakNumber({ label, value, min, max, step = 1, unit = '', onChange }) {
+  const clamp = (n) => {
+    if (min != null && n < min) return min;
+    if (max != null && n > max) return max;
+    return n;
+  };
+  const startRef = React.useRef({ x: 0, val: 0 });
+  const onScrubStart = (e) => {
+    e.preventDefault();
+    startRef.current = { x: e.clientX, val: value };
+    const decimals = (String(step).split('.')[1] || '').length;
+    const move = (ev) => {
+      const dx = ev.clientX - startRef.current.x;
+      const raw = startRef.current.val + dx * step;
+      const snapped = Math.round(raw / step) * step;
+      onChange(clamp(Number(snapped.toFixed(decimals))));
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  return (
+    <div className="twk-num">
+      <span className="twk-num-lbl" onPointerDown={onScrubStart}>{label}</span>
+      <input type="number" value={value} min={min} max={max} step={step}
+             onChange={(e) => onChange(clamp(Number(e.target.value)))} />
+      {unit && <span className="twk-num-unit">{unit}</span>}
+    </div>
+  );
+}
+
+// Relative-luminance contrast pick — checkmarks drawn over a swatch need to
+// read on both #111 and #fafafa without per-option configuration. Hex input
+// only (#rgb / #rrggbb); named or rgb()/hsl() colors fall through to "light".
+function __twkIsLight(hex) {
+  const h = String(hex).replace('#', '');
+  const x = h.length === 3 ? h.replace(/./g, (c) => c + c) : h.padEnd(6, '0');
+  const n = parseInt(x.slice(0, 6), 16);
+  if (Number.isNaN(n)) return true;
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return r * 299 + g * 587 + b * 114 > 148000;
+}
+
+const __TwkCheck = ({ light }) => (
+  <svg viewBox="0 0 14 14" aria-hidden="true">
+    <path d="M3 7.2 5.8 10 11 4.2" fill="none" strokeWidth="2.2"
+          strokeLinecap="round" strokeLinejoin="round"
+          stroke={light ? 'rgba(0,0,0,.78)' : '#fff'} />
+  </svg>
+);
+
+// TweakColor — curated color/palette picker. Each option is either a single
+// hex string or an array of 1-5 hex strings; the card adapts — a lone color
+// renders solid, a palette renders colors[0] as the hero (left ~2/3) with the
+// rest stacked in a sharp column on the right. onChange emits the
+// option in the shape it was passed (string stays string, array stays array).
+// Without options it falls back to the native color input for back-compat.
+function TweakColor({ label, value, options, onChange }) {
+  if (!options || !options.length) {
+    return (
+      <div className="twk-row twk-row-h">
+        <div className="twk-lbl"><span>{label}</span></div>
+        <input type="color" className="twk-swatch" value={value}
+               onChange={(e) => onChange(e.target.value)} />
+      </div>
+    );
+  }
+  // Native <input type=color> emits lowercase hex per the HTML spec, so
+  // compare case-insensitively. String() guards JSON.stringify(undefined),
+  // which returns the primitive undefined (no .toLowerCase).
+  const key = (o) => String(JSON.stringify(o)).toLowerCase();
+  const cur = key(value);
+  return (
+    <TweakRow label={label}>
+      <div className="twk-chips" role="radiogroup">
+        {options.map((o, i) => {
+          const colors = Array.isArray(o) ? o : [o];
+          const [hero, ...rest] = colors;
+          const sup = rest.slice(0, 4);
+          const on = key(o) === cur;
+          return (
+            <button key={i} type="button" className="twk-chip" role="radio"
+                    aria-checked={on} data-on={on ? '1' : '0'}
+                    aria-label={colors.join(', ')} title={colors.join(' · ')}
+                    style={{ background: hero }}
+                    onClick={() => onChange(o)}>
+              {sup.length > 0 && (
+                <span>
+                  {sup.map((c, j) => <i key={j} style={{ background: c }} />)}
+                </span>
+              )}
+              {on && <__TwkCheck light={__twkIsLight(hero)} />}
+            </button>
+          );
+        })}
+      </div>
+    </TweakRow>
+  );
+}
+
+function TweakButton({ label, onClick, secondary = false }) {
+  return (
+    <button type="button" className={secondary ? 'twk-btn secondary' : 'twk-btn'}
+            onClick={onClick}>{label}</button>
+  );
+}
+
+Object.assign(window, {
+  useTweaks, TweaksPanel, TweakSection, TweakRow,
+  TweakSlider, TweakToggle, TweakRadio, TweakSelect,
+  TweakText, TweakNumber, TweakColor, TweakButton,
+});
+
 </script>
 
 <script type="text/babel">
@@ -625,6 +1200,792 @@ window.fmtFull = fmtFull;
 
   window.agg = { applyFilter, byWeek, byMonth, byCampus, byCat, heatmap, kpis, isCompleteWeek, isoWeek, sameWeekLastYear };
 })();
+
+</script>
+
+<script type="text/babel">
+// main-view.jsx — Faith Church · Leadership Weekly Check-In
+// Single focused view: "How did we do this week — vs last week, vs same week last year?"
+// Tabs: Overview / Trends / Campuses / Records
+
+const M_THEME = {
+  paper: '#f7f1e6',
+  card: '#fbf6ec',
+  cardAlt: '#f3ede0',
+  rule: 'rgba(60,40,25,0.18)',
+  ruleLight: 'rgba(60,40,25,0.10)',
+  ink: '#231811',
+  ink2: 'rgba(35,24,17,0.72)',
+  ink3: 'rgba(35,24,17,0.52)',
+  wine: '#7d3a35',
+  clay: '#b87a4f',
+  sage: '#6e8a6c',
+  gold: '#a68534',
+  rose: '#9c5a6a',
+  good: '#5d7a4f',
+  bad: '#a23a2e',
+  display: '"Spectral", "Times New Roman", serif',
+  sans: '"Hanken Grotesk", -apple-system, system-ui, sans-serif',
+  mono: '"JetBrains Mono", "SF Mono", monospace'
+};
+
+function MainView({ density = 'comfortable' }) {
+  const T = M_THEME;
+  const ALL = window.ATTENDANCE;
+  const TODAY = new Date();
+  const [tab, setTab] = React.useState('overview'); // overview | trends | campuses | records
+  const [drawer, setDrawer] = React.useState(null);
+  const dens = density === 'compact';
+
+  const k = window.agg.kpis(ALL, TODAY);
+  const latest = k.latestWeek;
+  const prev = k.prevWeek;
+
+  // Same week last year
+  const lastYearTotal = latest ? window.agg.sameWeekLastYear(ALL, latest.weekOf) : null;
+
+  const wow = latest && prev ? (latest.total - prev.total) / prev.total * 100 : null;
+  const yoy = latest && lastYearTotal ? (latest.total - lastYearTotal) / lastYearTotal * 100 : null;
+
+  // Per-campus snapshot for latest week
+  const latestRows = latest ? ALL.filter((r) => r.weekOf === latest.weekOf) : [];
+  const prevRows = prev ? ALL.filter((r) => r.weekOf === prev.weekOf) : [];
+  const campusCards = window.CAMPUSES.map((c) => {
+    const cur = latestRows.filter((r) => r.campus === c).reduce((s, r) => s + (r.total || 0), 0);
+    const prv = prevRows.filter((r) => r.campus === c).reduce((s, r) => s + (r.total || 0), 0);
+    const delta = prv ? (cur - prv) / prv * 100 : null;
+    return { campus: c, cur, prv, delta };
+  }).filter((c) => c.cur > 0 || c.prv > 0);
+
+  return (
+    <div style={{
+      width: '100%', height: '100%', background: T.paper, color: T.ink,
+      fontFamily: T.sans, overflow: 'hidden', display: 'flex', flexDirection: 'column'
+    }}>
+      {/* Masthead */}
+      <Masthead T={T} dens={dens} latest={latest} />
+
+      {/* Tabs */}
+      <Tabs T={T} tab={tab} onChange={setTab} />
+
+      {/* Tab content */}
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        {tab === 'overview' &&
+        <OverviewTab T={T} dens={dens} latest={latest} prev={prev} lastYearTotal={lastYearTotal}
+        wow={wow} yoy={yoy} k={k} latestRows={latestRows} campusCards={campusCards}
+        onOpenRecord={setDrawer} />
+        }
+        {tab === 'trends' && <TrendsTab T={T} dens={dens} k={k} />}
+        {tab === 'campuses' && <CampusesTab T={T} dens={dens} />}
+        {tab === 'records' && <RecordsTab T={T} dens={dens} onOpenRecord={setDrawer} />}
+      </div>
+
+      {drawer && <Drawer record={drawer} onClose={() => setDrawer(null)} theme={T} />}
+    </div>);
+
+}
+
+function Masthead({ T, dens, latest }) {
+  return (
+    <div style={{ padding: `${dens ? 14 : 18}px ${dens ? 20 : 28}px`, borderBottom: `1px solid ${T.rule}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{ width: 32, height: 32, borderRadius: 8, background: T.wine, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fbf6ec" strokeWidth="2"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21V12h6v9" /></svg>
+        </div>
+        <div>
+          <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: '.18em', color: T.ink3, textTransform: 'uppercase' }}>Faith Church · Leadership Brief</div>
+          <h1 style={{ fontFamily: T.display, fontSize: dens ? 22 : 24, fontWeight: 500, margin: '2px 0 0', letterSpacing: '-0.01em' }}>
+            Weekly Attendance Check-in
+          </h1>
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        {latest &&
+        <div style={{ textAlign: 'right' }}>
+            <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: '.16em', color: T.ink3, textTransform: 'uppercase' }}>Most recent week</div>
+            <div style={{ fontFamily: T.display, fontSize: 15, fontStyle: 'italic', color: T.ink2, marginTop: 2 }}>Week of {latest.weekOf}</div>
+          </div>
+        }
+        <button style={{ padding: '7px 13px', border: `1px solid ${T.rule}`, background: 'transparent', borderRadius: 4, fontFamily: T.sans, fontSize: 11.5, color: T.ink2, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+          Export
+        </button>
+      </div>
+    </div>);
+
+}
+
+function Tabs({ T, tab, onChange }) {
+  const items = [
+  { id: 'overview', label: 'Overview', hint: 'this week at a glance' },
+  { id: 'trends', label: 'Trends', hint: '52-week patterns' },
+  { id: 'campuses', label: 'Campuses', hint: 'side-by-side' },
+  { id: 'records', label: 'Records', hint: 'every service' }];
+
+  return (
+    <div style={{ display: 'flex', borderBottom: `1px solid ${T.rule}`, padding: '0 24px', gap: 0, background: T.paper }}>
+      {items.map((it) => {
+        const active = tab === it.id;
+        return (
+          <button key={it.id} onClick={() => onChange(it.id)} style={{
+            padding: '13px 20px 11px', border: 'none', background: 'transparent',
+            borderBottom: active ? `2px solid ${T.wine}` : '2px solid transparent',
+            marginBottom: -1,
+            fontFamily: T.sans, fontSize: 13, fontWeight: active ? 600 : 500,
+            color: active ? T.ink : T.ink3, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 8
+          }}>
+            {it.label}
+            {!active && <span style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 11, color: T.ink3, fontWeight: 400 }}>{it.hint}</span>}
+          </button>);
+
+      })}
+    </div>);
+
+}
+
+// ============= OVERVIEW (the 5-second answer) =============
+
+function OverviewTab({ T, dens, latest, prev, lastYearTotal, wow, yoy, k, latestRows, campusCards, onOpenRecord }) {
+  if (!latest) return <div style={{ padding: 40, color: T.ink3 }}>No completed weeks of data.</div>;
+
+  // Hero: This week's total + two delta cards
+  return (
+    <div style={{ padding: `${dens ? 20 : 28}px ${dens ? 20 : 28}px` }}>
+      {/* HERO */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: dens ? 16 : 20, marginBottom: dens ? 20 : 28 }}>
+        {/* This week */}
+        <div style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 6, padding: dens ? 22 : 30 }}>
+          <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3, marginBottom: 8 }}>This week</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginBottom: 14 }}>
+            <div style={{ fontFamily: T.display, fontSize: dens ? 56 : 72, fontWeight: 500, lineHeight: .9, letterSpacing: '-0.025em', fontVariantNumeric: 'tabular-nums' }}>{window.fmtFull(latest.total)}</div>
+            <div style={{ fontFamily: T.display, fontSize: 15, fontStyle: 'italic', color: T.ink2 }}>across the network</div>
+          </div>
+          <div style={{ display: 'flex', gap: 18, fontFamily: T.sans, fontSize: 12.5, color: T.ink2, paddingTop: 10, borderTop: `1px solid ${T.ruleLight}` }}>
+            <Bullet T={T} label="Main Service" value={latest.main} color={T.wine} />
+            <Bullet T={T} label="FaithKids" value={latest.fk} color={T.clay} />
+            <Bullet T={T} label="Mainstream" value={latest.ms} color={T.sage} />
+          </div>
+        </div>
+
+        {/* vs last week */}
+        <DeltaCard T={T} dens={dens} title="vs last week" delta={wow}
+        curN={latest.total} prevN={prev?.total} prevLabel={prev ? `Week of ${prev.weekOf}` : '—'} />
+        {/* vs same week last year */}
+        <DeltaCard T={T} dens={dens} title="vs same week last year" delta={yoy}
+        curN={latest.total} prevN={lastYearTotal} prevLabel={lastYearTotal ? `Same week, ${new Date(latest.weekOf).getFullYear() - 1}` : 'No data for that week last year'} />
+      </div>
+
+      {/* Sub-row: per-campus snapshot + spark */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: dens ? 16 : 20, marginBottom: dens ? 20 : 28 }}>
+        <div style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 6, padding: dens ? 16 : 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+            <div>
+              <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3 }}>By campus · this week</div>
+              <h3 style={{ fontFamily: T.display, fontSize: 17, fontWeight: 500, margin: '2px 0 0' }}>How each location did</h3>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: dens ? 6 : 8 }}>
+            {campusCards.sort((a, b) => b.cur - a.cur).map((c) =>
+            <CampusRow key={c.campus} T={T} c={c} dens={dens} />
+            )}
+          </div>
+        </div>
+
+        {/* 4-week trailing & average */}
+        <div style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 6, padding: dens ? 16 : 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
+            <div>
+              <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3 }}>Trailing weeks</div>
+              <h3 style={{ fontFamily: T.display, fontSize: 17, fontWeight: 500, margin: '2px 0 0' }}>Last 8 completed weeks</h3>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontFamily: T.display, fontSize: 22, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{window.fmtFull(trailingAvg(k.completedWeeks, 4))}</div>
+              <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: '.16em', color: T.ink3, textTransform: 'uppercase' }}>Trailing 4-wk avg</div>
+            </div>
+          </div>
+          <window.LineChart
+            width={dens ? 580 : 600} height={dens ? 140 : 170}
+            series={[{
+              name: 'Total', color: T.wine,
+              values: k.completedWeeks.slice(-8).map((w) => w.total)
+            }]}
+            xLabels={k.completedWeeks.slice(-8).map((w) => w.weekOf.slice(5))}
+            fill={true}
+            colors={[T.wine]}
+            padding={{ t: 10, r: 14, b: 24, l: 42 }}
+            gridColor={T.ruleLight}
+            textColor={T.ink3}
+            showDots={true} />
+          
+          <div style={{ display: 'flex', gap: 14, marginTop: 10, paddingTop: 12, borderTop: `1px solid ${T.ruleLight}`, fontFamily: T.sans, fontSize: 12, color: T.ink2 }}>
+            <SmallStat T={T} label="8-wk avg" value={trailingAvg(k.completedWeeks, 8)} />
+            <SmallStat T={T} label="YTD avg" value={k.avgWeek} />
+            <SmallStat T={T} label="YTD total" value={k.ytdTotal} />
+          </div>
+        </div>
+      </div>
+
+      {/* Services this week */}
+      <div style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 6, padding: dens ? 16 : 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+          <div>
+            <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3 }}>Service-by-service · this week</div>
+            <h3 style={{ fontFamily: T.display, fontSize: 17, fontWeight: 500, margin: '2px 0 0' }}>{latestRows.length} services on record</h3>
+          </div>
+          <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 13, color: T.ink2 }}>Tap a rollup to expand · click any service for detail</div>
+        </div>
+        {/* Column header */}
+        <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 90px 90px 90px 110px', gap: 8, padding: '0 8px 6px', borderBottom: `1.5px solid ${T.ink}`, fontFamily: T.mono, fontSize: 9.5, letterSpacing: '.18em', textTransform: 'uppercase', color: T.ink3 }}>
+          <span></span>
+          <span>Service</span>
+          <span style={{ textAlign: 'right' }}>Main</span>
+          <span style={{ textAlign: 'right' }}>FaithKids</span>
+          <span style={{ textAlign: 'right' }}>Mainstream</span>
+          <span style={{ textAlign: 'right' }}>Total</span>
+        </div>
+        <ServiceTable T={T} dens={dens} rows={latestRows} onOpenRecord={onOpenRecord} />
+      </div>
+    </div>);
+
+}
+
+function Bullet({ T, label, value, color }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+      <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, display: 'inline-block' }} />
+      <span style={{ color: T.ink3, fontFamily: T.mono, fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase' }}>{label}</span>
+      <span style={{ fontFamily: T.display, fontSize: 18, fontWeight: 500, color: T.ink, fontVariantNumeric: 'tabular-nums' }}>{value == null ? '—' : window.fmtFull(value)}</span>
+    </div>);
+
+}
+
+function DeltaCard({ T, dens, title, delta, curN, prevN, prevLabel }) {
+  const has = delta != null && !isNaN(delta);
+  const good = has && delta >= 0;
+  const tone = !has ? T.ink3 : good ? T.good : T.bad;
+  const arrow = !has ? '·' : good ? '↑' : '↓';
+  const diff = has ? curN - prevN : null;
+  return (
+    <div style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 6, padding: dens ? 22 : 30, position: 'relative', overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: has ? tone : 'transparent' }} />
+      <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3, marginBottom: 8 }}>{title}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
+        <div style={{ fontFamily: T.display, fontSize: dens ? 44 : 54, fontWeight: 500, color: tone, lineHeight: .9, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+          {arrow} {has ? Math.abs(delta).toFixed(1) + '%' : '—'}
+        </div>
+      </div>
+      <div style={{ fontFamily: T.display, fontSize: 15, fontStyle: 'italic', color: T.ink2, marginBottom: 6 }}>
+        {has ? `${good ? '+' : '-'}${window.fmtFull(Math.abs(diff))} ${good ? 'more' : 'fewer'} attended` : 'Not enough data'}
+      </div>
+      <div style={{ fontFamily: T.mono, fontSize: 10.5, letterSpacing: '.06em', color: T.ink3 }}>{prevLabel}{prevN ? ` · ${window.fmtFull(prevN)}` : ''}</div>
+    </div>);
+
+}
+
+function CampusRow({ T, c, dens }) {
+  const has = c.delta != null && !isNaN(c.delta);
+  const good = has && c.delta >= 0;
+  const tone = !has ? T.ink3 : good ? T.good : T.bad;
+  const fullName = window.CAMPUS_LABEL && window.CAMPUS_LABEL[c.campus] || c.campus;
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 80px', gap: 8, alignItems: 'center', padding: `${dens ? 6 : 8}px 10px`, borderRadius: 4, background: T.cardAlt }}>
+      <div>
+        <div style={{ fontFamily: T.sans, fontSize: 13, fontWeight: 600 }}>{fullName}</div>
+        <div style={{ fontFamily: T.mono, fontSize: 10, color: T.ink3, letterSpacing: '.06em', marginTop: 1 }}>{c.campus}</div>
+      </div>
+      <div style={{ textAlign: 'right' }}>
+        <div style={{ fontFamily: T.display, fontSize: 18, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{window.fmtFull(c.cur)}</div>
+        <div style={{ fontFamily: T.mono, fontSize: 9.5, color: T.ink3, letterSpacing: '.06em' }}>this wk</div>
+      </div>
+      <div style={{ textAlign: 'right' }}>
+        {has ?
+        <>
+            <div style={{ fontFamily: T.display, fontSize: 14, color: tone, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{good ? '↑' : '↓'} {Math.abs(c.delta).toFixed(0)}%</div>
+            <div style={{ fontFamily: T.mono, fontSize: 9.5, color: T.ink3, letterSpacing: '.06em' }}>vs last wk</div>
+          </> :
+
+        <div style={{ fontFamily: T.mono, fontSize: 10, color: T.ink3 }}>—</div>
+        }
+      </div>
+    </div>);
+
+}
+
+function SmallStat({ T, label, value }) {
+  return (
+    <div style={{ flex: 1 }}>
+      <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: '.16em', textTransform: 'uppercase', color: T.ink3 }}>{label}</div>
+      <div style={{ fontFamily: T.display, fontSize: 17, fontWeight: 500, marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{window.fmtFull(value)}</div>
+    </div>);
+
+}
+
+function trailingAvg(weeks, n) {
+  const arr = weeks.slice(-n);
+  if (!arr.length) return 0;
+  return Math.round(arr.reduce((s, w) => s + w.total, 0) / arr.length);
+}
+
+function ServiceTable({ T, dens, rows, onOpenRecord }) {
+  const groups = window.groupCampusBuckets(rows);
+  const [expanded, setExpanded] = React.useState({});
+  const toggle = (k) => setExpanded((s) => ({ ...s, [k]: !s[k] }));
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      {groups.map((g, gi) => {
+        const buckets = ['Midweek', 'Sunday', 'Other'].filter((b) => g[b].rows.length);
+        if (!buckets.length) return null;
+        return (
+          <div key={g.campus} style={{ borderTop: gi === 0 ? `2px solid ${T.ink}` : `1px solid ${T.rule}`, paddingTop: dens ? 10 : 14, paddingBottom: dens ? 10 : 14 }}>
+            {/* Campus header */}
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: dens ? 8 : 10 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+                <span style={{ fontFamily: T.display, fontSize: dens ? 18 : 22, fontWeight: 500, letterSpacing: '-0.01em' }}>{window.CAMPUS_LABEL?.[g.campus] || g.campus}</span>
+                <span style={{ fontFamily: T.mono, fontSize: 10, color: T.ink3, letterSpacing: '.18em', textTransform: 'uppercase' }}>{buckets.length === 1 ? buckets[0] : buckets.join(' + ')}</span>
+              </div>
+              <div style={{ fontFamily: T.display, fontSize: dens ? 18 : 22, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{window.fmtFull(g.total)}</div>
+            </div>
+            {/* Bucket rollups */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {buckets.map((b) => {
+                const bk = g[b];
+                const key = g.campus + ':' + b;
+                const isOpen = expanded[key];
+                return (
+                  <div key={b}>
+                    <div onClick={() => toggle(key)} style={{ display: 'grid', gridTemplateColumns: '24px 1fr 90px 90px 90px 110px', gap: 8, alignItems: 'center', padding: `${dens ? 7 : 9}px 8px`, background: isOpen ? T.ruleLight : 'transparent', borderRadius: 4, cursor: 'pointer', fontFamily: T.sans, fontSize: dens ? 12 : 13 }}>
+                      <span style={{ fontFamily: T.mono, fontSize: 11, color: T.ink3 }}>{isOpen ? '▾' : '▸'}</span>
+                      <span style={{ fontFamily: T.display, fontSize: dens ? 14 : 15, fontWeight: 500 }}>
+                        {b} <span style={{ fontStyle: 'italic', color: T.ink3, fontWeight: 400 }}>· {bk.rows.length} {bk.rows.length === 1 ? 'service' : 'services'}</span>
+                      </span>
+                      <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: T.ink2 }}>{bk.main ? window.fmtFull(bk.main) : <span style={{ color: T.ink3 }}>—</span>}</span>
+                      <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: bk.fk ? T.clay : T.ink3 }}>{bk.fk ? window.fmtFull(bk.fk) : '—'}</span>
+                      <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: bk.ms ? T.sage : T.ink3 }}>{bk.ms ? window.fmtFull(bk.ms) : '—'}</span>
+                      <span style={{ textAlign: 'right', fontFamily: T.display, fontSize: dens ? 16 : 18, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{window.fmtFull(bk.total)}</span>
+                    </div>
+                    {isOpen && (
+                      <div style={{ paddingLeft: 32, paddingRight: 8, paddingTop: 4, paddingBottom: 6 }}>
+                        {bk.rows.map((r, i) => (
+                          <div key={i} onClick={(e) => { e.stopPropagation(); onOpenRecord(r); }} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 90px 90px 110px', gap: 8, alignItems: 'center', padding: `${dens ? 5 : 7}px 8px`, borderBottom: `1px solid ${T.ruleLight}`, cursor: 'pointer', fontFamily: T.sans, fontSize: dens ? 12 : 12.5 }}>
+                            <span>
+                              <span style={{ fontFamily: T.mono, fontSize: 10.5, color: T.ink3, marginRight: 8 }}>{r.date.slice(5)}</span>
+                              <span style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 13.5, color: T.ink2 }}>{window.serviceLabel(r)}</span>
+                            </span>
+                            <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.main ? T.ink : T.ink3 }}>{r.main ?? '—'}</span>
+                            <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.fk ? T.ink : T.ink3 }}>{r.fk ?? '—'}</span>
+                            <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.ms ? T.ink : T.ink3 }}>{r.ms ?? '—'}</span>
+                            <span style={{ textAlign: 'right', fontFamily: T.display, fontSize: 14, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{window.fmtFull(r.total)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+      {/* column header row at top, sticky-ish */}
+    </div>
+  );
+}
+
+// ============= TRENDS =============
+
+function TrendsTab({ T, dens, k }) {
+  const [range, setRange] = React.useState(52); // weeks
+  const [overlayLY, setOverlayLY] = React.useState(true);
+  const ALL = window.ATTENDANCE;
+
+  const recent = k.completedWeeks.slice(-range);
+  const labels = recent.map((w) => w.weekOf.slice(5));
+  const series = [
+  { name: 'Weekly total', color: T.wine, stroke: 2.5, values: recent.map((w) => w.total) }];
+
+  if (overlayLY) {
+    const map = new Map();
+    k.completedWeeks.forEach((w) => {
+      map.set(window.agg.isoWeek(w.weekOf) + '-' + new Date(w.weekOf).getFullYear(), w.total);
+    });
+    const lyValues = recent.map((w) => {
+      const dt = new Date(w.weekOf);
+      const key = window.agg.isoWeek(w.weekOf) + '-' + (dt.getFullYear() - 1);
+      return map.get(key) ?? null;
+    });
+    series.push({ name: 'Same week, prior year', color: T.ink3, dash: '4 4', stroke: 1.5, values: lyValues });
+  }
+
+  // Trailing 4-wk MA
+  const ma = recent.map((_, i) => {
+    const sl = recent.slice(Math.max(0, i - 3), i + 1);
+    return Math.round(sl.reduce((s, w) => s + w.total, 0) / sl.length);
+  });
+  series.push({ name: '4-week trailing avg', color: T.gold, stroke: 1.5, values: ma });
+
+  // Generation breakdown
+  const genSeries = [
+  { name: 'Main Service', color: T.wine, values: recent.map((w) => w.main) },
+  { name: 'FaithKids', color: T.clay, values: recent.map((w) => w.fk) },
+  { name: 'Mainstream', color: T.sage, values: recent.map((w) => w.ms) }];
+
+
+  return (
+    <div style={{ padding: dens ? 20 : 28 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+        <div>
+          <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3 }}>Trends</div>
+          <h2 style={{ fontFamily: T.display, fontSize: 26, fontWeight: 500, margin: '2px 0 0', letterSpacing: '-0.01em' }}>How are we trending?</h2>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: 11.5, color: T.ink3, fontFamily: T.sans }}>Range:</span>
+          {[[12, '12 wk'], [26, '26 wk'], [52, '52 wk'], [999, 'All']].map(([n, l]) =>
+          <button key={l} onClick={() => setRange(n)} style={{
+            padding: '5px 12px', borderRadius: 4, border: `1px solid ${range === n ? T.wine : T.rule}`,
+            background: range === n ? T.wine : 'transparent', color: range === n ? '#fbf6ec' : T.ink2,
+            fontFamily: T.sans, fontSize: 11.5, fontWeight: 500, cursor: 'pointer'
+          }}>{l}</button>
+          )}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 14, fontSize: 12, color: T.ink2, cursor: 'pointer' }}>
+            <input type="checkbox" checked={overlayLY} onChange={() => setOverlayLY((v) => !v)} style={{ accentColor: T.wine }} />
+            Overlay last year
+          </label>
+        </div>
+      </div>
+
+      <div style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 6, padding: dens ? 16 : 20, marginBottom: dens ? 16 : 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
+          <h3 style={{ fontFamily: T.display, fontSize: 17, fontWeight: 500, margin: 0 }}>Network total · weekly</h3>
+          <div style={{ display: 'flex', gap: 14, fontFamily: T.sans, fontSize: 11.5 }}>
+            {series.map((s) =>
+            <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: 6, color: T.ink2 }}>
+                <span style={{ display: 'inline-block', width: 18, height: 0, borderTop: `2px ${s.dash ? 'dashed' : 'solid'} ${s.color}` }} />
+                {s.name}
+              </div>
+            )}
+          </div>
+        </div>
+        <window.LineChart
+          width={1340} height={dens ? 240 : 280}
+          series={series}
+          xLabels={labels}
+          fill={false}
+          padding={{ t: 14, r: 24, b: 30, l: 50 }}
+          gridColor={T.ruleLight}
+          textColor={T.ink3}
+          showDots={recent.length <= 20} />
+        
+      </div>
+
+      <div style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 6, padding: dens ? 16 : 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
+          <h3 style={{ fontFamily: T.display, fontSize: 17, fontWeight: 500, margin: 0 }}>By generation · weekly</h3>
+          <div style={{ display: 'flex', gap: 14, fontFamily: T.sans, fontSize: 11.5 }}>
+            {genSeries.map((s) =>
+            <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: 6, color: T.ink2 }}>
+                <span style={{ display: 'inline-block', width: 8, height: 8, background: s.color, borderRadius: 2 }} />
+                {s.name}
+              </div>
+            )}
+          </div>
+        </div>
+        <window.LineChart
+          width={1340} height={dens ? 200 : 230}
+          series={genSeries}
+          xLabels={labels}
+          fill={false}
+          padding={{ t: 14, r: 24, b: 30, l: 50 }}
+          gridColor={T.ruleLight}
+          textColor={T.ink3} />
+        
+      </div>
+    </div>);
+
+}
+
+// ============= CAMPUSES (side-by-side) =============
+
+function CampusesTab({ T, dens }) {
+  const ALL = window.ATTENDANCE;
+  const TODAY = new Date();
+  const cards = window.CAMPUSES.map((c) => {
+    const rows = ALL.filter((r) => r.campus === c);
+    if (!rows.length) return null;
+    const ck = window.agg.kpis(rows, TODAY);
+    return { campus: c, k: ck };
+  }).filter(Boolean).filter((x) => x.k.completedWeeks.length > 0).sort((a, b) => b.k.allTimeTotal - a.k.allTimeTotal);
+
+  return (
+    <div style={{ padding: dens ? 20 : 28 }}>
+      <div style={{ marginBottom: 18 }}>
+        <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3 }}>Campuses</div>
+        <h2 style={{ fontFamily: T.display, fontSize: 26, fontWeight: 500, margin: '2px 0 0', letterSpacing: '-0.01em' }}>Side-by-side</h2>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: dens ? 14 : 18 }}>
+        {cards.map((card) => <CampusCard key={card.campus} T={T} dens={dens} c={card.campus} k={card.k} />)}
+      </div>
+    </div>);
+
+}
+
+function CampusCard({ T, dens, c, k }) {
+  const fullName = window.CAMPUS_LABEL && window.CAMPUS_LABEL[c] || c;
+  const sub = window.CAMPUS_SUB && window.CAMPUS_SUB[c] || '';
+  const latest = k.latestWeek;
+  const prev = k.prevWeek;
+  const wow = latest && prev ? (latest.total - prev.total) / prev.total * 100 : null;
+  const lastYearTotal = latest ? window.agg.sameWeekLastYear(window.ATTENDANCE.filter((r) => r.campus === c), latest.weekOf) : null;
+  const yoy = latest && lastYearTotal ? (latest.total - lastYearTotal) / lastYearTotal * 100 : null;
+  const recent = k.completedWeeks.slice(-26);
+
+  return (
+    <div style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 6, padding: dens ? 16 : 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, paddingBottom: 12, borderBottom: `1px solid ${T.ruleLight}` }}>
+        <div>
+          <div style={{ fontFamily: T.mono, fontSize: 11, color: T.wine, letterSpacing: '.1em', fontWeight: 600 }}>{c}</div>
+          <h3 style={{ fontFamily: T.display, fontSize: 20, fontWeight: 500, margin: '2px 0 0', letterSpacing: '-0.01em' }}>{fullName}</h3>
+          {sub && <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 12, color: T.ink3, marginTop: 2 }}>{sub}</div>}
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontFamily: T.display, fontSize: 30, fontWeight: 500, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>{window.fmtFull(latest?.total || 0)}</div>
+          <div style={{ fontFamily: T.mono, fontSize: 9.5, color: T.ink3, letterSpacing: '.16em', textTransform: 'uppercase', marginTop: 4 }}>This week</div>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 14 }}>
+        <MiniDelta T={T} label="vs last wk" delta={wow} />
+        <MiniDelta T={T} label="vs last yr" delta={yoy} />
+        <div>
+          <div style={{ fontFamily: T.mono, fontSize: 9.5, color: T.ink3, letterSpacing: '.16em', textTransform: 'uppercase' }}>Avg / wk</div>
+          <div style={{ fontFamily: T.display, fontSize: 17, fontWeight: 500, fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{window.fmtFull(k.avgWeek)}</div>
+        </div>
+      </div>
+
+      <window.LineChart
+        width={dens ? 620 : 660} height={90}
+        series={[{ name: 'Total', color: T.wine, values: recent.map((w) => w.total) }]}
+        xLabels={recent.map((w) => w.weekOf.slice(5))}
+        fill={true}
+        colors={[T.wine]}
+        padding={{ t: 6, r: 6, b: 18, l: 32 }}
+        gridColor={T.ruleLight}
+        textColor={T.ink3} />
+      
+    </div>);
+
+}
+
+function MiniDelta({ T, label, delta }) {
+  const has = delta != null && !isNaN(delta);
+  const good = has && delta >= 0;
+  const tone = !has ? T.ink3 : good ? T.good : T.bad;
+  return (
+    <div>
+      <div style={{ fontFamily: T.mono, fontSize: 9.5, color: T.ink3, letterSpacing: '.16em', textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ fontFamily: T.display, fontSize: 17, fontWeight: 600, color: tone, fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>
+        {!has ? '—' : (good ? '↑' : '↓') + ' ' + Math.abs(delta).toFixed(1) + '%'}
+      </div>
+    </div>);
+
+}
+
+// ============= RECORDS =============
+
+function RecordsTab({ T, dens, onOpenRecord }) {
+  const ALL = window.ATTENDANCE;
+  const [campuses, setCampuses] = React.useState([]);
+  const [cats, setCats] = React.useState([]);
+  const [sort, setSort] = React.useState({ key: 'date', dir: 'desc' });
+  const [search, setSearch] = React.useState('');
+
+  const filtered = React.useMemo(() => {
+    let r = ALL;
+    if (campuses.length) r = r.filter((x) => campuses.includes(x.campus));
+    if (cats.length) r = r.filter((x) => cats.includes(x.cat));
+    if (search) {
+      const q = search.toLowerCase();
+      r = r.filter((x) => x.date.includes(q) || x.cat.toLowerCase().includes(q) || x.campus.toLowerCase().includes(q));
+    }
+    return r.slice().sort((a, b) => {
+      const av = a[sort.key],bv = b[sort.key];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;if (bv == null) return -1;
+      const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      return sort.dir === 'asc' ? cmp : -cmp;
+    });
+  }, [campuses, cats, sort, search]);
+
+  const sortIcon = (key) => {
+    if (sort.key !== key) return <span style={{ color: T.ink3, fontSize: 9, marginLeft: 4 }}>↕</span>;
+    return <span style={{ color: T.wine, fontSize: 10, marginLeft: 4 }}>{sort.dir === 'asc' ? '↑' : '↓'}</span>;
+  };
+
+  const Pill = ({ active, onClick, children }) =>
+  <button onClick={onClick} style={{
+    padding: '4px 10px', borderRadius: 999, border: `1px solid ${active ? T.wine : T.rule}`,
+    background: active ? T.wine : 'transparent', color: active ? '#fbf6ec' : T.ink2,
+    fontFamily: T.sans, fontSize: 11.5, fontWeight: 500, cursor: 'pointer'
+  }}>{children}</button>;
+
+
+  return (
+    <div style={{ padding: dens ? 20 : 28 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
+        <div>
+          <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3 }}>Records</div>
+          <h2 style={{ fontFamily: T.display, fontSize: 26, fontWeight: 500, margin: '2px 0 0', letterSpacing: '-0.01em' }}>Every service</h2>
+        </div>
+        <div style={{ position: 'relative' }}>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="search…"
+          style={{ padding: '6px 12px 6px 28px', background: T.card, border: `1px solid ${T.rule}`, borderRadius: 4, color: T.ink, fontFamily: T.sans, fontSize: 12.5, width: 220, outline: 'none' }} />
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={T.ink3} strokeWidth="2" style={{ position: 'absolute', left: 10, top: 9 }}>
+            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </div>
+      </div>
+
+      {/* Filter chips */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8, alignItems: 'center' }}>
+        <span style={{ fontFamily: T.mono, fontSize: 10, color: T.ink3, letterSpacing: '.1em', textTransform: 'uppercase', marginRight: 4 }}>Campus</span>
+        {window.CAMPUSES.map((c) =>
+        <Pill key={c} active={campuses.includes(c)} onClick={() => setCampuses((p) => p.includes(c) ? p.filter((x) => x !== c) : [...p, c])}>{c}</Pill>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>
+        <span style={{ fontFamily: T.mono, fontSize: 10, color: T.ink3, letterSpacing: '.1em', textTransform: 'uppercase', marginRight: 4 }}>Service</span>
+        {window.SERVICE_CATS.map((c) =>
+        <Pill key={c} active={cats.includes(c)} onClick={() => setCats((p) => p.includes(c) ? p.filter((x) => x !== c) : [...p, c])}>{c}</Pill>
+        )}
+      </div>
+
+      <div style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 6, overflow: 'hidden' }}>
+        <div style={{ padding: '10px 16px', borderBottom: `1px solid ${T.ruleLight}`, fontFamily: T.mono, fontSize: 11, color: T.ink3 }}>
+          {filtered.length.toLocaleString()} services · showing first {Math.min(40, filtered.length)}
+        </div>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: T.sans, fontSize: dens ? 12 : 13 }}>
+          <thead>
+            <tr style={{ borderBottom: `1px solid ${T.rule}`, color: T.ink3, background: T.cardAlt }}>
+              {[
+              ['date', 'Date', 'left'],
+              ['campus', 'Campus', 'left'],
+              ['cat', 'Service', 'left'],
+              ['main', 'Main', 'right'],
+              ['fk', 'FaithKids', 'right'],
+              ['ms', 'Mainstream', 'right'],
+              ['total', 'Total', 'right']].
+              map(([key, label, a]) =>
+              <th key={key} onClick={() => setSort((s) => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }))} style={{
+                textAlign: a, padding: `${dens ? 8 : 10}px 12px`, fontFamily: T.mono, fontSize: 9.5, letterSpacing: '.18em',
+                textTransform: 'uppercase', fontWeight: 500, cursor: 'pointer', userSelect: 'none'
+              }}>{label}{sortIcon(key)}</th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.slice(0, 40).map((r, i) =>
+            <tr key={i} onClick={() => onOpenRecord(r)} style={{ borderBottom: `1px solid ${T.ruleLight}`, cursor: 'pointer' }}>
+                <td style={{ padding: `${dens ? 6 : 9}px 12px`, fontFamily: T.mono, fontSize: 11.5, color: T.ink2 }}>{r.date}</td>
+                <td style={{ padding: `${dens ? 6 : 9}px 12px`, fontWeight: 600 }}>{r.campus}</td>
+                <td style={{ padding: `${dens ? 6 : 9}px 12px`, fontStyle: 'italic', fontFamily: T.display, fontSize: 14, color: T.ink2 }}>{window.serviceLabel(r)}</td>
+                <td style={{ padding: `${dens ? 6 : 9}px 12px`, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.main ? T.ink : T.ink3 }}>{r.main ?? '—'}</td>
+                <td style={{ padding: `${dens ? 6 : 9}px 12px`, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.fk ? T.ink : T.ink3 }}>{r.fk ?? '—'}</td>
+                <td style={{ padding: `${dens ? 6 : 9}px 12px`, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.ms ? T.ink : T.ink3 }}>{r.ms ?? '—'}</td>
+                <td style={{ padding: `${dens ? 6 : 9}px 12px`, textAlign: 'right', fontFamily: T.display, fontSize: 15, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{window.fmtFull(r.total)}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>);
+
+}
+
+// ============= DRAWER =============
+
+function Drawer({ record, onClose, theme }) {
+  const T = theme;
+  const sibs = window.ATTENDANCE.filter((r) => r.date === record.date).sort((a, b) => a.campus < b.campus ? -1 : 1);
+  const total = sibs.reduce((s, r) => s + (r.total || 0), 0);
+  const series = window.ATTENDANCE.
+  filter((r) => r.campus === record.campus && r.cat === record.cat).
+  sort((a, b) => a.date < b.date ? -1 : 1);
+  const fullName = window.CAMPUS_LABEL && window.CAMPUS_LABEL[record.campus] || record.campus;
+  return (
+    <div style={{ position: 'absolute', inset: 0, background: 'rgba(35,24,17,.4)', zIndex: 10, display: 'flex', justifyContent: 'flex-end' }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        width: 480, height: '100%', background: T.paper, padding: 32, overflow: 'auto', borderLeft: `1px solid ${T.rule}`,
+        boxShadow: '-12px 0 40px rgba(0,0,0,.18)'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+          <div>
+            <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: '.18em', color: T.ink3, textTransform: 'uppercase' }}>Service detail</div>
+            <h3 style={{ fontFamily: T.display, fontSize: 30, margin: '8px 0 0', fontWeight: 500, letterSpacing: '-0.01em' }}>{window.serviceLabel(record)}</h3>
+            <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 16, color: T.ink2, marginTop: 4 }}>{fullName} · {record.date}</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'transparent', border: `1px solid ${T.rule}`, width: 32, height: 32, borderRadius: '50%', cursor: 'pointer', color: T.ink2, fontSize: 14 }}>✕</button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10, marginBottom: 24 }}>
+          {(record.msHigh != null || record.msMiddle != null
+            ? [
+              { l: 'Total', v: record.total, big: true },
+              { l: 'Main Service', v: record.main },
+              { l: 'FaithKids', v: record.fk },
+              { l: 'Mainstream High', v: record.msHigh },
+              { l: 'Mainstream Middle', v: record.msMiddle }
+            ]
+            : [
+              { l: 'Total', v: record.total, big: true },
+              { l: 'Main Service', v: record.main },
+              { l: 'FaithKids', v: record.fk },
+              { l: 'Mainstream', v: record.ms }
+            ]
+          ).map((it, i) =>
+          <div key={i} style={{ padding: 14, border: `1px solid ${T.rule}`, background: T.card, borderRadius: 4 }}>
+              <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3 }}>{it.l}</div>
+              <div style={{ fontFamily: T.display, fontSize: it.big ? 32 : 22, fontWeight: 500, marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>{it.v == null ? '—' : window.fmtFull(it.v)}</div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3, marginBottom: 10 }}>Trend · {window.serviceLabel(record)} at {record.campus}</div>
+          <window.LineChart
+            width={416} height={130}
+            series={[{ name: window.serviceLabel(record), values: series.map((s) => s.total), color: T.wine }]}
+            xLabels={series.map((s) => s.date.slice(5))}
+            fill={true} colors={[T.wine]}
+            padding={{ t: 10, r: 8, b: 24, l: 36 }}
+            gridColor={T.ruleLight} textColor={T.ink3} />
+          
+        </div>
+
+        <div>
+          <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3, marginBottom: 10 }}>Same date · all services</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: T.sans, fontSize: 12 }}>
+            <tbody>
+            {sibs.map((s, i) =>
+              <tr key={i} style={{ borderBottom: `1px solid ${T.ruleLight}` }}>
+                <td style={{ padding: '8px 0', color: s === record ? T.wine : T.ink2 }}>{s.campus}</td>
+                <td style={{ padding: '8px 0', fontStyle: 'italic', fontFamily: T.display, color: s === record ? T.wine : T.ink2 }}>{window.serviceLabel(s)}</td>
+                <td style={{ padding: '8px 0', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: s === record ? 600 : 400, color: s === record ? T.wine : T.ink }}>{window.fmtFull(s.total)}</td>
+              </tr>
+              )}
+            <tr style={{ borderTop: `2px solid ${T.ink}`, fontWeight: 600 }}>
+              <td colSpan="2" style={{ padding: '10px 0' }}>All campuses</td>
+              <td style={{ padding: '10px 0', textAlign: 'right', fontFamily: T.display, fontSize: 18, fontWeight: 600 }}>{window.fmtFull(total)}</td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>);
+
+}
+
+window.MainView = MainView;
+window.M_THEME = M_THEME;
 
 </script>
 
@@ -1770,38 +3131,77 @@ function StatusBarRight() {
   );
 }
 
+const MOBILE_BP = 900;
+
 function App() {
+  const [isMobile, setIsMobile] = React.useState(window.innerWidth < MOBILE_BP);
   const [showEntry, setShowEntry] = React.useState(false);
   const [dataVersion, setDataVersion] = React.useState(0);
+  const [t, setT] = window.useTweaks({ density: 'comfortable' });
+
+  React.useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < MOBILE_BP);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+
+  React.useEffect(() => {
+    document.body.style.background = isMobile ? '#1a120c' : '#f7f1e6';
+    document.body.style.overscrollBehavior = isMobile ? 'none' : '';
+  }, [isMobile]);
 
   const handleSaved = () => {
     window.mergeAttendance();
-    setDataVersion((v) => v + 1);
+    setDataVersion(v => v + 1);
   };
+
+  if (isMobile) {
+    return (
+      <React.Fragment>
+        <div className="stage">
+          <div className="device-shell">
+            <div className="device-island"/>
+            <div className="device-statusbar">
+              <span>9:41</span>
+              <StatusBarRight/>
+            </div>
+            <div className="device-content">
+              <window.MobileView key={dataVersion}/>
+            </div>
+            <div className="device-home"/>
+          </div>
+          <div className="desktop-caption">Faith Church · Mobile Brief · resize narrow or open on iPhone for fullscreen</div>
+        </div>
+        <window.AddEntryFAB mobile={true} onClick={() => setShowEntry(true)} />
+        {showEntry && (
+          <window.DataEntryModal
+            onClose={() => setShowEntry(false)}
+            onSaved={handleSaved}
+          />
+        )}
+      </React.Fragment>
+    );
+  }
 
   return (
     <React.Fragment>
-      <div className="stage">
-        <div className="device-shell">
-          <div className="device-island"/>
-          <div className="device-statusbar">
-            <span>9:41</span>
-            <StatusBarRight/>
-          </div>
-          <div className="device-content">
-            <window.MobileView key={dataVersion}/>
-          </div>
-          <div className="device-home"/>
-        </div>
-        <div className="desktop-caption">Faith Church · Mobile Brief · resize narrow or open on iPhone for fullscreen</div>
-      </div>
-      <window.AddEntryFAB mobile={true} onClick={() => setShowEntry(true)} />
+      <window.MainView key={dataVersion} density={t.density}/>
+      <window.AddEntryFAB onClick={() => setShowEntry(true)} />
       {showEntry && (
         <window.DataEntryModal
           onClose={() => setShowEntry(false)}
           onSaved={handleSaved}
         />
       )}
+      <window.TweaksPanel title="Tweaks">
+        <window.TweakSection label="Density"/>
+        <window.TweakRadio
+          label="Spacing"
+          value={t.density}
+          options={['comfortable','compact']}
+          onChange={(v) => setT('density', v)}
+        />
+      </window.TweaksPanel>
     </React.Fragment>
   );
 }
@@ -1812,8 +3212,11 @@ const waitFor = (cond) => new Promise(r => {
 });
 
 (async () => {
-  await waitFor(() => window.MobileView && window.LineChart && window.agg
-    && window.DataEntryModal && window.AddEntryFAB && window.M_THEME);
+  await waitFor(() =>
+    window.MobileView && window.MainView && window.LineChart && window.agg
+    && window.DataEntryModal && window.AddEntryFAB && window.M_THEME
+    && window.useTweaks && window.TweaksPanel
+  );
   ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 })();
 
