@@ -1359,8 +1359,8 @@ function MainView({ density = 'comfortable', onDataChange }) {
         }
         {tab === 'trends' && <TrendsTab T={T} dens={dens} k={k} />}
         {tab === 'campuses' && <CampusesTab T={T} dens={dens} />}
-        {tab === 'records' && <RecordsTab T={T} dens={dens} onOpenRecord={setDrawer} />}
         {tab === 'events' && <window.EventsTab T={T} dens={dens} onDataChange={onDataChange} />}
+        {tab === 'records' && <RecordsTab T={T} dens={dens} onOpenRecord={setDrawer} />}
       </div>
 
       {drawer && <Drawer record={drawer} onClose={() => setDrawer(null)} theme={T} onDataChange={onDataChange} />}
@@ -1403,8 +1403,8 @@ function Tabs({ T, tab, onChange }) {
   { id: 'overview', label: 'Overview', hint: 'this week at a glance' },
   { id: 'trends', label: 'Trends', hint: '52-week patterns' },
   { id: 'campuses', label: 'Campuses', hint: 'side-by-side' },
-  { id: 'records', label: 'Records', hint: 'every service' },
-  { id: 'events', label: 'Events', hint: 'year over year' }];
+  { id: 'events', label: 'Events', hint: 'year over year' },
+  { id: 'records', label: 'Records', hint: 'every service' }];
 
   return (
     <div style={{ display: 'flex', borderBottom: `1px solid ${T.rule}`, padding: '0 24px', gap: 0, background: T.paper }}>
@@ -1459,6 +1459,26 @@ function OverviewTab({ T, dens, latest, prev, lastYearTotal, wow, yoy, k, latest
         <DeltaCard T={T} dens={dens} title="vs same week last year" delta={yoy}
         curN={latest.total} prevN={lastYearTotal} prevLabel={lastYearTotal ? `Same week, ${new Date(latest.weekOf).getFullYear() - 1}` : 'No data for that week last year'} />
       </div>
+
+      {(() => {
+        const seen = new Set(); const evCards = [];
+        (latestRows || []).forEach(r => {
+          if (r.eventId && !seen.has(r.eventId)) {
+            seen.add(r.eventId);
+            const evRows = (latestRows || []).filter(x => x.eventId === r.eventId);
+            const total = evRows.reduce((s, x) => s + (x.total || 0), 0);
+            const yr = parseInt(latest.weekOf.slice(0, 4));
+            const lyRows = window.ATTENDANCE.filter(x => x.eventId === r.eventId && x.year === yr - 1);
+            const lastYearTotal = lyRows.length ? lyRows.reduce((s, x) => s + (x.total || 0), 0) : null;
+            evCards.push({ eventId: r.eventId, eventName: r.eventName, total, lastYearTotal });
+          }
+        });
+        return evCards.length > 0 ? (
+          <div style={{ marginBottom: dens ? 16 : 20, display: 'flex', flexDirection: 'column', gap: dens ? 10 : 14 }}>
+            {evCards.map(ev => <window.EventHighlightCard key={ev.eventId} T={T} dens={dens} ev={ev} />)}
+          </div>
+        ) : null;
+      })()}
 
       {/* Sub-row: per-campus snapshot + spark */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: dens ? 16 : 20, marginBottom: dens ? 20 : 28 }}>
@@ -1882,8 +1902,13 @@ function MiniDelta({ T, label, delta, abs }) {
 
 function RecordsTab({ T, dens, onOpenRecord }) {
   const ALL = window.ATTENDANCE;
+  const SERVICE_CATS_FILTERED = window.SERVICE_CATS.filter(c => c !== 'Special Event');
+  const events = window.loadEventRegistry();
   const [campuses, setCampuses] = React.useState([]);
   const [cats, setCats] = React.useState([]);
+  const [eventFilter, setEventFilter] = React.useState([]);
+  const [fromDate, setFromDate] = React.useState('');
+  const [toDate, setToDate] = React.useState('');
   const [sort, setSort] = React.useState({ key: 'date', dir: 'desc' });
   const [search, setSearch] = React.useState('');
 
@@ -1891,18 +1916,21 @@ function RecordsTab({ T, dens, onOpenRecord }) {
     let r = ALL;
     if (campuses.length) r = r.filter((x) => campuses.includes(x.campus));
     if (cats.length) r = r.filter((x) => cats.includes(x.cat));
+    if (eventFilter.length) r = r.filter((x) => eventFilter.includes(x.eventId));
+    if (fromDate) r = r.filter((x) => x.date >= fromDate);
+    if (toDate) r = r.filter((x) => x.date <= toDate);
     if (search) {
       const q = search.toLowerCase();
       r = r.filter((x) => x.date.includes(q) || x.cat.toLowerCase().includes(q) || x.campus.toLowerCase().includes(q));
     }
     return r.slice().sort((a, b) => {
-      const av = a[sort.key],bv = b[sort.key];
+      const av = a[sort.key], bv = b[sort.key];
       if (av == null && bv == null) return 0;
-      if (av == null) return 1;if (bv == null) return -1;
+      if (av == null) return 1; if (bv == null) return -1;
       const cmp = av < bv ? -1 : av > bv ? 1 : 0;
       return sort.dir === 'asc' ? cmp : -cmp;
     });
-  }, [campuses, cats, sort, search]);
+  }, [campuses, cats, eventFilter, fromDate, toDate, sort, search]);
 
   const sortIcon = (key) => {
     if (sort.key !== key) return <span style={{ color: T.ink3, fontSize: 9, marginLeft: 4 }}>↕</span>;
@@ -1910,12 +1938,13 @@ function RecordsTab({ T, dens, onOpenRecord }) {
   };
 
   const Pill = ({ active, onClick, children }) =>
-  <button onClick={onClick} style={{
-    padding: '4px 10px', borderRadius: 999, border: `1px solid ${active ? T.wine : T.rule}`,
-    background: active ? T.wine : 'transparent', color: active ? '#fbf6ec' : T.ink2,
-    fontFamily: T.sans, fontSize: 11.5, fontWeight: 500, cursor: 'pointer'
-  }}>{children}</button>;
+    <button onClick={onClick} style={{
+      padding: '4px 10px', borderRadius: 999, border: `1px solid ${active ? T.wine : T.rule}`,
+      background: active ? T.wine : 'transparent', color: active ? '#fbf6ec' : T.ink2,
+      fontFamily: T.sans, fontSize: 11.5, fontWeight: 500, cursor: 'pointer'
+    }}>{children}</button>;
 
+  const inpSt = { height: 32, padding: '0 8px', background: T.card, border: `1px solid ${T.rule}`, borderRadius: 4, color: T.ink, fontFamily: T.sans, fontSize: 12.5, outline: 'none' };
 
   return (
     <div style={{ padding: dens ? 20 : 28 }}>
@@ -1933,17 +1962,42 @@ function RecordsTab({ T, dens, onOpenRecord }) {
         </div>
       </div>
 
-      {/* Filter chips */}
+      {/* Date range */}
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+        <span style={{ fontFamily: T.mono, fontSize: 10, color: T.ink3, letterSpacing: '.1em', textTransform: 'uppercase' }}>Date</span>
+        <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={inpSt} />
+        <span style={{ fontFamily: T.sans, fontSize: 12, color: T.ink3 }}>to</span>
+        <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={inpSt} />
+        {(fromDate || toDate) && (
+          <button onClick={() => { setFromDate(''); setToDate(''); }} style={{ padding: '3px 8px', borderRadius: 4, border: `1px solid ${T.rule}`, background: 'transparent', color: T.ink3, fontFamily: T.mono, fontSize: 10, cursor: 'pointer' }}>clear</button>
+        )}
+      </div>
+
+      {/* Campus filter */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8, alignItems: 'center' }}>
         <span style={{ fontFamily: T.mono, fontSize: 10, color: T.ink3, letterSpacing: '.1em', textTransform: 'uppercase', marginRight: 4 }}>Campus</span>
         {window.CAMPUSES.map((c) =>
         <Pill key={c} active={campuses.includes(c)} onClick={() => setCampuses((p) => p.includes(c) ? p.filter((x) => x !== c) : [...p, c])}>{c}</Pill>
         )}
       </div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>
+
+      {/* Service filter — no Special Event, Thursday Service shown as The Voice */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8, alignItems: 'center' }}>
         <span style={{ fontFamily: T.mono, fontSize: 10, color: T.ink3, letterSpacing: '.1em', textTransform: 'uppercase', marginRight: 4 }}>Service</span>
-        {window.SERVICE_CATS.map((c) =>
-        <Pill key={c} active={cats.includes(c)} onClick={() => setCats((p) => p.includes(c) ? p.filter((x) => x !== c) : [...p, c])}>{c}</Pill>
+        {SERVICE_CATS_FILTERED.map((c) =>
+        <Pill key={c} active={cats.includes(c)} onClick={() => setCats((p) => p.includes(c) ? p.filter((x) => x !== c) : [...p, c])}>
+          {c === 'Thursday Service' ? 'The Voice' : c}
+        </Pill>
+        )}
+      </div>
+
+      {/* Event filter */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>
+        <span style={{ fontFamily: T.mono, fontSize: 10, color: T.ink3, letterSpacing: '.1em', textTransform: 'uppercase', marginRight: 4 }}>Event</span>
+        {events.map((ev) =>
+        <Pill key={ev.id} active={eventFilter.includes(ev.id)} onClick={() => setEventFilter((p) => p.includes(ev.id) ? p.filter((x) => x !== ev.id) : [...p, ev.id])}>
+          {ev.name}
+        </Pill>
         )}
       </div>
 
@@ -2213,8 +2267,8 @@ function MobileView({ onAddEntry, onDataChange }) {
         {tab === 'overview' && <MOverview T={T} completed={completed} weekIdx={weekIdx} setWeekIdx={setWeekIdx} ALL={ALL} k={k} onOpenCampus={(c) => setSheet({ kind: 'campus', payload: c })} onOpenService={(r) => setSheet({ kind: 'service', payload: r })} />}
         {tab === 'trends' && <MTrends T={T} k={k} />}
         {tab === 'campuses' && <MCampuses T={T} ALL={ALL} TODAY={TODAY} onOpenCampus={(c) => setSheet({ kind: 'campus', payload: c })} />}
-        {tab === 'records' && <MRecords T={T} ALL={ALL} onOpenService={(r) => setSheet({ kind: 'service', payload: r })} />}
         {tab === 'events' && <window.MEventsTab T={T} onDataChange={onDataChange} />}
+        {tab === 'records' && <MRecords T={T} ALL={ALL} onOpenService={(r) => setSheet({ kind: 'service', payload: r })} />}
       </div>
 
       <MobileTabs T={T} tab={tab} onChange={setTab} />
@@ -2248,7 +2302,7 @@ function Spinner({ T, label }) {
 }
 
 function MobileHeader({ T, tab, onShare, weekLabel, onAddEntry }) {
-  const titles = { overview: 'This week', trends: 'Trends', campuses: 'Campuses', records: 'Records', events: 'Events' };
+  const titles = { overview: 'This week', trends: 'Trends', campuses: 'Campuses', events: 'Events', records: 'Records' };
   return (
     <div style={{
       padding: '14px 18px 12px', borderBottom: `1px solid ${T.rule}`,
@@ -2292,8 +2346,7 @@ function MobileTabs({ T, tab, onChange }) {
     { id: 'overview', label: 'Overview', icon: <path d="M3 12l9-9 9 9M5 10v11h14V10" /> },
     { id: 'trends', label: 'Trends', icon: <path d="M3 17l6-6 4 4 8-8" /> },
     { id: 'campuses', label: 'Campuses', icon: <><circle cx="12" cy="10" r="3" /><path d="M12 2a8 8 0 0 0-8 8c0 5.5 8 12 8 12s8-6.5 8-12a8 8 0 0 0-8-8z" /></> },
-    { id: 'records', label: 'Records', icon: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6" /><path d="M9 13h6M9 17h6" /></> },
-    { id: 'events', label: 'Events', icon: <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" strokeLinejoin="round" /> }
+    { id: 'records', label: 'Records', icon: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6" /><path d="M9 13h6M9 17h6" /></> }
   ];
   return (
     <div style={{
@@ -2375,6 +2428,26 @@ function MOverview({ T, completed, weekIdx, setWeekIdx, ALL, k, onOpenCampus, on
         <MDelta T={T} label="vs last week" delta={wow} cur={w.total} prevN={prev?.total} />
         <MDelta T={T} label="vs last year" delta={yoy} cur={w.total} prevN={lastYearTotal} />
       </div>
+
+      {(() => {
+        const seen = new Set(); const evCards = [];
+        wkRows.forEach(r => {
+          if (r.eventId && !seen.has(r.eventId)) {
+            seen.add(r.eventId);
+            const evRows = wkRows.filter(x => x.eventId === r.eventId);
+            const total = evRows.reduce((s, x) => s + (x.total || 0), 0);
+            const yr = parseInt(w.weekOf.slice(0, 4));
+            const lyRows = ALL.filter(x => x.eventId === r.eventId && x.year === yr - 1);
+            const lastYearTotal = lyRows.length ? lyRows.reduce((s, x) => s + (x.total || 0), 0) : null;
+            evCards.push({ eventId: r.eventId, eventName: r.eventName, total, lastYearTotal });
+          }
+        });
+        return evCards.length > 0 ? (
+          <div style={{ marginBottom: 14 }}>
+            {evCards.map(ev => <window.MEventHighlightCard key={ev.eventId} T={T} ev={ev} />)}
+          </div>
+        ) : null;
+      })()}
 
       {/* Campuses */}
       <div style={{ marginBottom: 18 }}>
@@ -2757,17 +2830,38 @@ function MiniStat({ T, label, value, tone, sub }) {
 
 // ============= RECORDS =============
 function MRecords({ T, ALL, onOpenService }) {
+  const SERVICE_CATS_FILTERED = window.SERVICE_CATS.filter(c => c !== 'Special Event');
+  const events = window.loadEventRegistry();
   const [campuses, setCampuses] = React.useState([]);
+  const [cats, setCats] = React.useState([]);
+  const [eventFilter, setEventFilter] = React.useState([]);
+  const [fromDate, setFromDate] = React.useState('');
+  const [toDate, setToDate] = React.useState('');
   const [search, setSearch] = React.useState('');
+
   const filtered = React.useMemo(() => {
     let r = ALL;
     if (campuses.length) r = r.filter((x) => campuses.includes(x.campus));
+    if (cats.length) r = r.filter((x) => cats.includes(x.cat));
+    if (eventFilter.length) r = r.filter((x) => eventFilter.includes(x.eventId));
+    if (fromDate) r = r.filter((x) => x.date >= fromDate);
+    if (toDate) r = r.filter((x) => x.date <= toDate);
     if (search) {
       const q = search.toLowerCase();
       r = r.filter((x) => x.date.includes(q) || x.cat.toLowerCase().includes(q) || x.campus.toLowerCase().includes(q));
     }
     return r.slice().sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
-  }, [campuses, search]);
+  }, [campuses, cats, eventFilter, fromDate, toDate, search]);
+
+  const MPill = ({ active, onClick, children }) => (
+    <button onClick={onClick} style={{
+      padding: '5px 10px', borderRadius: 999, border: `1px solid ${active ? T.wine : T.rule}`,
+      background: active ? T.wine : 'transparent', color: active ? '#fbf6ec' : T.ink2,
+      fontFamily: T.sans, fontSize: 10.5, fontWeight: 500, cursor: 'pointer'
+    }}>{children}</button>
+  );
+
+  const inpSt = { height: 34, padding: '0 8px', background: T.card, border: `1px solid ${T.rule}`, borderRadius: 6, color: T.ink, fontFamily: T.sans, fontSize: 12, outline: 'none', flex: 1, minWidth: 0 };
 
   return (
     <div style={{ padding: '14px 16px 24px' }}>
@@ -2782,18 +2876,45 @@ function MRecords({ T, ALL, onOpenService }) {
           <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
         </svg>
       </div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-        {window.CAMPUSES.map((c) => {
-          const active = campuses.includes(c);
-          return (
-            <button key={c} onClick={() => setCampuses((p) => p.includes(c) ? p.filter((x) => x !== c) : [...p, c])} style={{
-              padding: '6px 12px', borderRadius: 999, border: `1px solid ${active ? T.wine : T.rule}`,
-              background: active ? T.wine : 'transparent', color: active ? '#fbf6ec' : T.ink2,
-              fontFamily: T.sans, fontSize: 11.5, fontWeight: 500, cursor: 'pointer'
-            }}>{c}</button>
-          );
-        })}
+
+      {/* Date range */}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontFamily: T.mono, fontSize: 9, color: T.ink3, letterSpacing: '.1em', textTransform: 'uppercase', flexShrink: 0 }}>Date</span>
+        <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={inpSt} />
+        <span style={{ fontFamily: T.sans, fontSize: 11, color: T.ink3, flexShrink: 0 }}>–</span>
+        <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={inpSt} />
+        {(fromDate || toDate) && (
+          <button onClick={() => { setFromDate(''); setToDate(''); }} style={{ padding: '4px 8px', borderRadius: 4, border: `1px solid ${T.rule}`, background: 'transparent', color: T.ink3, fontFamily: T.mono, fontSize: 9.5, cursor: 'pointer', flexShrink: 0 }}>✕</button>
+        )}
       </div>
+
+      {/* Campus filter */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+        {window.CAMPUSES.map((c) => (
+          <MPill key={c} active={campuses.includes(c)} onClick={() => setCampuses((p) => p.includes(c) ? p.filter((x) => x !== c) : [...p, c])}>{c}</MPill>
+        ))}
+      </div>
+
+      {/* Service filter — no Special Event, Thursday Service = The Voice */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8, alignItems: 'center' }}>
+        <span style={{ fontFamily: T.mono, fontSize: 8.5, color: T.ink3, letterSpacing: '.1em', textTransform: 'uppercase', flexShrink: 0 }}>Svc</span>
+        {SERVICE_CATS_FILTERED.map((c) => (
+          <MPill key={c} active={cats.includes(c)} onClick={() => setCats((p) => p.includes(c) ? p.filter((x) => x !== c) : [...p, c])}>
+            {c === 'Thursday Service' ? 'The Voice' : c}
+          </MPill>
+        ))}
+      </div>
+
+      {/* Event filter */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10, alignItems: 'center' }}>
+        <span style={{ fontFamily: T.mono, fontSize: 8.5, color: T.ink3, letterSpacing: '.1em', textTransform: 'uppercase', flexShrink: 0 }}>Event</span>
+        {events.map((ev) => (
+          <MPill key={ev.id} active={eventFilter.includes(ev.id)} onClick={() => setEventFilter((p) => p.includes(ev.id) ? p.filter((x) => x !== ev.id) : [...p, ev.id])}>
+            {ev.name}
+          </MPill>
+        ))}
+      </div>
+
       <div style={{ fontFamily: T.mono, fontSize: 10, color: T.ink3, letterSpacing: '.1em', marginBottom: 8 }}>
         {filtered.length.toLocaleString()} services · showing first {Math.min(80, filtered.length)}
       </div>
@@ -3337,6 +3458,66 @@ function EventAssignPicker({ T, record, onDataChange }) {
   );
 }
 
+// ── EventHighlightCard (desktop) ──────────────────────────────────────────────
+function EventHighlightCard({ T, dens, ev }) {
+  const hasLastYear = ev.lastYearTotal != null;
+  const delta = hasLastYear ? (ev.total - ev.lastYearTotal) / ev.lastYearTotal * 100 : null;
+  const abs = hasLastYear ? ev.total - ev.lastYearTotal : null;
+  const up = delta != null && delta >= 0;
+  const tone = delta == null ? T.ink2 : up ? T.good : T.bad;
+  return (
+    <div style={{ border: `1px solid ${T.rule}`, borderLeft: `3px solid ${T.wine}`, borderRadius: 6, background: T.card, padding: dens ? '14px 18px' : '18px 22px', display: 'flex', alignItems: 'flex-start', gap: 20 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3, marginBottom: 4 }}>Special Event · This Week</div>
+        <div style={{ fontFamily: T.display, fontSize: dens ? 16 : 18, fontWeight: 500 }}>{ev.eventName}</div>
+        <div style={{ fontFamily: T.display, fontSize: dens ? 28 : 34, fontWeight: 600, fontVariantNumeric: 'tabular-nums', marginTop: 4, lineHeight: 1 }}>{ev.total.toLocaleString()}</div>
+      </div>
+      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+        <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3, marginBottom: 6 }}>vs last year</div>
+        {!hasLastYear ? (
+          <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 13, color: T.ink3 }}>First year on record</div>
+        ) : (
+          <React.Fragment>
+            <div style={{ fontFamily: T.display, fontSize: dens ? 20 : 24, fontWeight: 600, color: tone }}>{(up ? '↑' : '↓')} {Math.abs(delta).toFixed(1)}%</div>
+            <div style={{ fontFamily: T.mono, fontSize: 11, color: tone, fontVariantNumeric: 'tabular-nums', fontWeight: 600, marginTop: 2 }}>{abs >= 0 ? '+' : ''}{Math.round(abs).toLocaleString()}</div>
+            <div style={{ fontFamily: T.mono, fontSize: 9.5, color: T.ink3, marginTop: 4 }}>{ev.lastYearTotal.toLocaleString()} last yr</div>
+          </React.Fragment>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── MEventHighlightCard (mobile) ──────────────────────────────────────────────
+function MEventHighlightCard({ T, ev }) {
+  const hasLastYear = ev.lastYearTotal != null;
+  const delta = hasLastYear ? (ev.total - ev.lastYearTotal) / ev.lastYearTotal * 100 : null;
+  const abs = hasLastYear ? ev.total - ev.lastYearTotal : null;
+  const up = delta != null && delta >= 0;
+  const tone = delta == null ? T.ink2 : up ? T.good : T.bad;
+  return (
+    <div style={{ border: `1px solid ${T.rule}`, borderLeft: `3px solid ${T.wine}`, borderRadius: 8, background: T.card, padding: '12px 14px', marginBottom: 10, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: '.18em', textTransform: 'uppercase', color: T.ink3, marginBottom: 3 }}>Special Event</div>
+        <div style={{ fontFamily: T.display, fontSize: 15, fontWeight: 500, marginBottom: 2 }}>{ev.eventName}</div>
+        <div style={{ fontFamily: T.display, fontSize: 28, fontWeight: 600, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>{ev.total.toLocaleString()}</div>
+      </div>
+      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+        <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: '.18em', textTransform: 'uppercase', color: T.ink3, marginBottom: 4 }}>vs last yr</div>
+        {!hasLastYear ? (
+          <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 12, color: T.ink3, marginTop: 6 }}>First year</div>
+        ) : (
+          <React.Fragment>
+            <div style={{ fontFamily: T.display, fontSize: 18, fontWeight: 600, color: tone }}>{(up ? '↑' : '↓')} {Math.abs(delta).toFixed(1)}%</div>
+            <div style={{ fontFamily: T.mono, fontSize: 10, color: tone, fontVariantNumeric: 'tabular-nums', fontWeight: 600, marginTop: 1 }}>{abs >= 0 ? '+' : ''}{Math.round(abs).toLocaleString()}</div>
+            <div style={{ fontFamily: T.mono, fontSize: 9, color: T.ink3, marginTop: 3 }}>{ev.lastYearTotal.toLocaleString()} last yr</div>
+          </React.Fragment>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── EventsTab (desktop) ────────────────────────────────────────────────────────
 function EventsTab({ T, dens }) {
   const events = window.loadEventRegistry();
@@ -3486,6 +3667,8 @@ function MEventsTab({ T }) {
 }
 
 window.EventAssignPicker = EventAssignPicker;
+window.EventHighlightCard = EventHighlightCard;
+window.MEventHighlightCard = MEventHighlightCard;
 window.EventsTab = EventsTab;
 window.MEventsTab = MEventsTab;
 
@@ -3588,6 +3771,7 @@ const waitFor = (cond) => new Promise(r => {
     && window.DataEntryModal && window.AddEntryFAB && window.M_THEME
     && window.useTweaks && window.TweaksPanel
     && window.EventsTab && window.MEventsTab && window.EventAssignPicker
+    && window.EventHighlightCard && window.MEventHighlightCard
   );
   ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 })();
