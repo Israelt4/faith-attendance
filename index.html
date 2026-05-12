@@ -1311,7 +1311,7 @@ const M_THEME = {
   mono: '"JetBrains Mono", "SF Mono", monospace'
 };
 
-function MainView({ density = 'comfortable', onDataChange }) {
+function MainView({ density = 'comfortable', onDataChange, onEditRecord }) {
   const T = M_THEME;
   const ALL = window.ATTENDANCE;
   const TODAY = new Date();
@@ -1360,7 +1360,7 @@ function MainView({ density = 'comfortable', onDataChange }) {
         {tab === 'trends' && <TrendsTab T={T} dens={dens} k={k} />}
         {tab === 'campuses' && <CampusesTab T={T} dens={dens} />}
         {tab === 'events' && <window.EventsTab T={T} dens={dens} onDataChange={onDataChange} />}
-        {tab === 'records' && <RecordsTab T={T} dens={dens} onOpenRecord={setDrawer} />}
+        {tab === 'records' && <RecordsTab T={T} dens={dens} onOpenRecord={setDrawer} onEditRecord={onEditRecord} />}
       </div>
 
       {drawer && <Drawer record={drawer} onClose={() => setDrawer(null)} theme={T} onDataChange={onDataChange} />}
@@ -1434,10 +1434,10 @@ function OverviewTab({ T, dens, latest, prev, lastYearTotal, wow, yoy, k, latest
   if (!latest) return <div style={{ padding: 40, color: T.ink3 }}>No completed weeks of data.</div>;
 
   const _ytdYr = parseInt(latest.weekOf.slice(0, 4));
-  const _cWks = k.completed.filter(w => parseInt(w.weekOf.slice(0, 4)) === _ytdYr && w.weekOf <= latest.weekOf);
+  const _cWks = k.completedWeeks.filter(w => parseInt(w.weekOf.slice(0, 4)) === _ytdYr && w.weekOf <= latest.weekOf);
   const _ytdN = _cWks.length;
   const ytdAvg = _ytdN > 0 ? _cWks.reduce((s, w) => s + w.total, 0) / _ytdN : null;
-  const _pWks = k.completed.filter(w => parseInt(w.weekOf.slice(0, 4)) === _ytdYr - 1).slice(0, _ytdN);
+  const _pWks = k.completedWeeks.filter(w => parseInt(w.weekOf.slice(0, 4)) === _ytdYr - 1).slice(0, _ytdN);
   const lyYtdAvg = _pWks.length > 0 ? _pWks.reduce((s, w) => s + w.total, 0) / _pWks.length : null;
   const ytdDelta = ytdAvg && lyYtdAvg ? (ytdAvg - lyYtdAvg) / lyYtdAvg * 100 : null;
   return (
@@ -1906,7 +1906,7 @@ function MiniDelta({ T, label, delta, abs }) {
 
 // ============= RECORDS =============
 
-function RecordsTab({ T, dens, onOpenRecord }) {
+function RecordsTab({ T, dens, onOpenRecord, onEditRecord }) {
   const ALL = window.ATTENDANCE;
   const SERVICE_CATS_FILTERED = window.SERVICE_CATS.filter(c => c !== 'Special Event');
   const events = window.loadEventRegistry();
@@ -2040,6 +2040,9 @@ function RecordsTab({ T, dens, onOpenRecord }) {
                 <td style={{ padding: `${dens ? 6 : 9}px 12px`, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.fk ? T.ink : T.ink3 }}>{r.fk ?? '—'}</td>
                 <td style={{ padding: `${dens ? 6 : 9}px 12px`, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.ms ? T.ink : T.ink3 }}>{r.ms ?? '—'}</td>
                 <td style={{ padding: `${dens ? 6 : 9}px 12px`, textAlign: 'right', fontFamily: T.display, fontSize: 15, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{window.fmtFull(r.total)}</td>
+                <td style={{ padding: `${dens ? 6 : 9}px 8px`, textAlign: 'center' }}>
+                  {onEditRecord && <button onClick={(e) => { e.stopPropagation(); onEditRecord(r); }} title="Edit" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: T.ink3, fontSize: 14, padding: '2px 4px', lineHeight: 1 }}>✎</button>}
+                </td>
               </tr>
             )}
           </tbody>
@@ -2163,7 +2166,7 @@ const MM_THEME = {
   mono: '"JetBrains Mono", "SF Mono", monospace'
 };
 
-function MobileView({ onAddEntry, onDataChange }) {
+function MobileView({ onAddEntry, onDataChange, onEditRecord }) {
   const T = MM_THEME;
   const ALL = window.ATTENDANCE;
   const TODAY = new Date();
@@ -2274,7 +2277,7 @@ function MobileView({ onAddEntry, onDataChange }) {
         {tab === 'trends' && <MTrends T={T} k={k} />}
         {tab === 'campuses' && <MCampuses T={T} ALL={ALL} TODAY={TODAY} onOpenCampus={(c) => setSheet({ kind: 'campus', payload: c })} />}
         {tab === 'events' && <window.MEventsTab T={T} onDataChange={onDataChange} />}
-        {tab === 'records' && <MRecords T={T} ALL={ALL} onOpenService={(r) => setSheet({ kind: 'service', payload: r })} />}
+        {tab === 'records' && <MRecords T={T} ALL={ALL} onOpenService={(r) => setSheet({ kind: 'service', payload: r })} onEditRecord={onEditRecord} />}
       </div>
 
       <MobileTabs T={T} tab={tab} onChange={setTab} />
@@ -2842,7 +2845,7 @@ function MiniStat({ T, label, value, tone, sub }) {
 }
 
 // ============= RECORDS =============
-function MRecords({ T, ALL, onOpenService }) {
+function MRecords({ T, ALL, onOpenService, onEditRecord }) {
   const SERVICE_CATS_FILTERED = window.SERVICE_CATS.filter(c => c !== 'Special Event');
   const events = window.loadEventRegistry();
   const [campuses, setCampuses] = React.useState([]);
@@ -2932,7 +2935,16 @@ function MRecords({ T, ALL, onOpenService }) {
         {filtered.length.toLocaleString()} services · showing first {Math.min(80, filtered.length)}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {filtered.slice(0, 80).map((r, i) => <MServiceRow key={i} T={T} r={r} onTap={() => onOpenService(r)} />)}
+        {filtered.slice(0, 80).map((r, i) => (
+          <div key={i} style={{ position: 'relative' }}>
+            <MServiceRow T={T} r={r} onTap={() => onOpenService(r)} />
+            {onEditRecord && <button onClick={(e) => { e.stopPropagation(); onEditRecord(r); }} title="Edit" style={{
+              position: 'absolute', top: 8, right: 38, background: 'rgba(247,241,230,0.9)',
+              border: `1px solid ${T.rule}`, borderRadius: 4, cursor: 'pointer',
+              color: T.ink2, fontSize: 12, padding: '3px 7px', lineHeight: 1,
+            }}>✎</button>}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -3079,55 +3091,114 @@ window.M_THEME = MM_THEME;
 </script>
 
 <script type="text/babel">
-// data-entry.jsx — Add new service records, persisted to localStorage.
-// Renders a modal form + list of previously added entries (with delete).
 
-function DataEntryModal({ onClose, onSaved }) {
+function DataEntryModal({ onClose, onSaved, editEntry }) {
   const T = window.M_THEME;
   const today = new Date().toISOString().slice(0, 10);
-  const [form, setForm] = React.useState({
-    date: today,
-    campus: window.CAMPUSES[0],
-    cat: window.SERVICE_CATS[0],
-    main: '', fk: '', ms: '', notes: '', eventId: null, excludeFromWeekly: false,
-  });
+  const isEditing = !!editEntry;
+
+  const initForm = () => {
+    if (editEntry) {
+      return {
+        date: editEntry.date || today,
+        campus: editEntry.campus || window.CAMPUSES[0],
+        cat: editEntry.cat || window.SERVICE_CATS[0],
+        main: editEntry.main != null ? String(editEntry.main) : '',
+        fk: editEntry.fk != null ? String(editEntry.fk) : '',
+        ms: editEntry.ms != null ? String(editEntry.ms) : '',
+        msM: editEntry.msM != null ? String(editEntry.msM) : '',
+        eventId: editEntry.eventId || null,
+        excludeFromWeekly: !!editEntry.excludeFromWeekly,
+      };
+    }
+    return {
+      date: today,
+      campus: window.CAMPUSES[0],
+      cat: window.SERVICE_CATS[0],
+      main: '', fk: '', ms: '', msM: '',
+      eventId: null, excludeFromWeekly: false,
+    };
+  };
+
+  const [form, setForm] = React.useState(initForm);
   const [savedFlash, setSavedFlash] = React.useState(false);
-  const [entries, setEntries] = React.useState(() => window.loadStoredEntries());
+  const [sessionEntries, setSessionEntries] = React.useState([]);
+  const [editingIdx, setEditingIdx] = React.useState(null);
 
   const numVal = (v) => parseInt(v) || 0;
-  const total = numVal(form.main) + numVal(form.fk) + numVal(form.ms);
+  const isCFCWed = form.campus === 'CFC' && form.cat === 'Wednesday Service';
+  const total = numVal(form.main) + numVal(form.fk) + numVal(form.ms) + (isCFCWed ? numVal(form.msM) : 0);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
-  // Faith Church week: Wed → Sun. Roll any date back to its preceding Wednesday.
   const getWeekOf = (dateStr) => {
     const d = new Date(dateStr + 'T00:00:00');
-    const day = d.getDay(); // 0=Sun .. 6=Sat
+    const day = d.getDay();
     const daysBack = day >= 3 ? day - 3 : day + 4;
     const wed = new Date(d);
     wed.setDate(d.getDate() - daysBack);
     return wed.toISOString().slice(0, 10);
   };
 
-  const handleSubmit = () => {
-    if (!form.date || !total) return;
+  const buildEntry = () => {
     const d = new Date(form.date + 'T00:00:00');
-    const entry = {
+    return {
       date: form.date,
       campus: form.campus,
       cat: form.cat,
       main: numVal(form.main) || null,
       fk: numVal(form.fk) || null,
       ms: numVal(form.ms) || null,
+      msM: (isCFCWed && numVal(form.msM)) ? numVal(form.msM) : null,
       total,
-      notes: form.notes,
-      eventId: form.eventId || null,
-      excludeFromWeekly: !!form.excludeFromWeekly,
       weekOf: getWeekOf(form.date),
       year: d.getFullYear(),
       month: d.getMonth() + 1,
       quarter: Math.ceil((d.getMonth() + 1) / 3),
       isManual: true,
+      eventId: form.eventId || null,
+      excludeFromWeekly: !!form.excludeFromWeekly,
     };
+  };
+
+  const resetForm = () => {
+    setForm((f) => ({ ...f, main: '', fk: '', ms: '', msM: '', eventId: null, excludeFromWeekly: false }));
+    setEditingIdx(null);
+  };
+
+  const handleSubmit = () => {
+    if (!form.date || !total) return;
+    const entry = buildEntry();
+
+    if (isEditing) {
+      const stored = window.loadStoredEntries();
+      if (editEntry.isManual) {
+        const idx = stored.findIndex(r => r.date === editEntry.date && r.campus === editEntry.campus && r.cat === editEntry.cat);
+        if (idx !== -1) stored[idx] = entry; else stored.push(entry);
+      } else {
+        stored.push(entry);
+      }
+      localStorage.setItem('fc_attendance_entries', JSON.stringify(stored));
+      onSaved();
+      onClose();
+      return;
+    }
+
+    if (editingIdx !== null) {
+      const origEntry = sessionEntries[editingIdx];
+      const updatedSession = [...sessionEntries];
+      updatedSession[editingIdx] = entry;
+      const stored = window.loadStoredEntries();
+      const storeIdx = stored.findIndex(r => r.isManual && r.date === origEntry.date && r.campus === origEntry.campus && r.cat === origEntry.cat);
+      if (storeIdx !== -1) stored[storeIdx] = entry; else stored.push(entry);
+      localStorage.setItem('fc_attendance_entries', JSON.stringify(stored));
+      setSessionEntries(updatedSession);
+      onSaved();
+      resetForm();
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 2000);
+      return;
+    }
+
     const all = [...window.loadStoredEntries(), entry];
     try {
       localStorage.setItem('fc_attendance_entries', JSON.stringify(all));
@@ -3135,20 +3206,35 @@ function DataEntryModal({ onClose, onSaved }) {
       alert('Could not save — browser storage may be full.');
       return;
     }
-    setEntries(all);
+    setSessionEntries((prev) => [...prev, entry]);
     onSaved();
-    // keep campus/service; clear counts for fast multi-row entry
-    setForm((f) => ({ ...f, main: '', fk: '', ms: '', notes: '', eventId: null, excludeFromWeekly: false }));
+    resetForm();
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 2000);
   };
 
-  const handleDelete = (idx) => {
+  const handleDeleteSession = (idx) => {
+    const entry = sessionEntries[idx];
     const all = window.loadStoredEntries();
-    all.splice(idx, 1);
-    localStorage.setItem('fc_attendance_entries', JSON.stringify(all));
-    setEntries([...all]);
+    const storeIdx = all.findIndex(r => r.isManual && r.date === entry.date && r.campus === entry.campus && r.cat === entry.cat);
+    if (storeIdx !== -1) { all.splice(storeIdx, 1); localStorage.setItem('fc_attendance_entries', JSON.stringify(all)); }
+    setSessionEntries((prev) => prev.filter((_, i) => i !== idx));
+    if (editingIdx === idx) resetForm();
     onSaved();
+  };
+
+  const handleEditSession = (idx) => {
+    const e = sessionEntries[idx];
+    setForm({
+      date: e.date, campus: e.campus, cat: e.cat,
+      main: e.main != null ? String(e.main) : '',
+      fk: e.fk != null ? String(e.fk) : '',
+      ms: e.ms != null ? String(e.ms) : '',
+      msM: e.msM != null ? String(e.msM) : '',
+      eventId: e.eventId || null,
+      excludeFromWeekly: !!e.excludeFromWeekly,
+    });
+    setEditingIdx(idx);
   };
 
   const iSt = {
@@ -3159,15 +3245,14 @@ function DataEntryModal({ onClose, onSaved }) {
     WebkitAppearance: 'auto',
   };
   const canSave = total > 0 && !!form.date;
+  const btnLabel = isEditing ? 'Update Entry' : (editingIdx !== null ? 'Update' : 'Save Entry');
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(35,24,17,.45)',
-        zIndex: 1000, display: 'flex', alignItems: 'flex-start',
-        justifyContent: 'center', padding: '40px 16px 60px', overflowY: 'auto',
-      }}>
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(35,24,17,.45)',
+      zIndex: 1000, display: 'flex', alignItems: 'flex-start',
+      justifyContent: 'center', padding: '40px 16px 60px', overflowY: 'auto',
+    }}>
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
@@ -3177,26 +3262,24 @@ function DataEntryModal({ onClose, onSaved }) {
           overflow: 'hidden', fontFamily: T.sans,
         }}>
 
-        {/* Header */}
         <div style={{
           padding: '20px 24px 16px', borderBottom: `1px solid ${T.rule}`,
           display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
         }}>
           <div>
             <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3, marginBottom: 4 }}>Attendance Entry</div>
-            <h2 style={{ fontFamily: T.display, fontSize: 24, fontWeight: 500, margin: 0, letterSpacing: '-0.01em' }}>Add Service Record</h2>
+            <h2 style={{ fontFamily: T.display, fontSize: 24, fontWeight: 500, margin: 0, letterSpacing: '-0.01em' }}>
+              {isEditing ? 'Edit Record' : (editingIdx !== null ? 'Edit Entry' : 'Add Service Record')}
+            </h2>
           </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'transparent', border: `1px solid ${T.rule}`,
-              width: 32, height: 32, borderRadius: '50%', cursor: 'pointer',
-              color: T.ink2, fontSize: 14, display: 'flex',
-              alignItems: 'center', justifyContent: 'center',
-            }}>✕</button>
+          <button onClick={onClose} style={{
+            background: 'transparent', border: `1px solid ${T.rule}`,
+            width: 32, height: 32, borderRadius: '50%', cursor: 'pointer',
+            color: T.ink2, fontSize: 14, display: 'flex',
+            alignItems: 'center', justifyContent: 'center',
+          }}>✕</button>
         </div>
 
-        {/* Form body */}
         <div style={{ padding: '20px 24px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr 1.3fr', gap: 12, marginBottom: 16 }}>
             <EField label="Date" T={T}>
@@ -3218,16 +3301,21 @@ function DataEntryModal({ onClose, onSaved }) {
             </EField>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 76px', gap: 12, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isCFCWed ? '1fr 1fr 1fr 1fr 76px' : '1fr 1fr 1fr 76px', gap: 12, marginBottom: 16 }}>
             <EField label="Main Service" T={T}>
               <input type="number" min="0" value={form.main} onChange={(e) => set('main', e.target.value)} placeholder="—" style={iSt} />
             </EField>
             <EField label="FaithKids" T={T}>
               <input type="number" min="0" value={form.fk} onChange={(e) => set('fk', e.target.value)} placeholder="—" style={iSt} />
             </EField>
-            <EField label="Mainstream" T={T}>
+            <EField label={isCFCWed ? 'Mainstream High' : 'Mainstream'} T={T}>
               <input type="number" min="0" value={form.ms} onChange={(e) => set('ms', e.target.value)} placeholder="—" style={iSt} />
             </EField>
+            {isCFCWed && (
+              <EField label="Mainstream Mid" T={T}>
+                <input type="number" min="0" value={form.msM} onChange={(e) => set('msM', e.target.value)} placeholder="—" style={iSt} />
+              </EField>
+            )}
             <EField label="Total" T={T}>
               <div style={{
                 height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -3240,12 +3328,6 @@ function DataEntryModal({ onClose, onSaved }) {
               </div>
             </EField>
           </div>
-
-          <EField label="Notes (optional)" T={T}>
-            <input
-              type="text" value={form.notes} onChange={(e) => set('notes', e.target.value)}
-              placeholder="optional note…" style={iSt} />
-          </EField>
 
           <EField label="Special Event (optional)" T={T}>
             <div style={{ marginTop: 8 }}>
@@ -3273,67 +3355,74 @@ function DataEntryModal({ onClose, onSaved }) {
               </label>
             </div>
           </EField>
+
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20 }}>
             <div style={{
               fontFamily: T.mono, fontSize: 11, color: T.sage, letterSpacing: '.06em',
               opacity: savedFlash ? 1 : 0, transition: 'opacity .3s',
-            }}>✓ Entry saved</div>
+            }}>✓ {editingIdx !== null ? 'Updated' : 'Saved'}</div>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button
-                onClick={onClose}
-                style={{
+              {editingIdx !== null && (
+                <button onClick={resetForm} style={{
+                  padding: '9px 18px', border: `1px solid ${T.rule}`, background: 'transparent',
+                  borderRadius: 4, fontFamily: T.sans, fontSize: 13, color: T.ink2, cursor: 'pointer',
+                }}>Cancel edit</button>
+              )}
+              {!isEditing && editingIdx === null && (
+                <button onClick={onClose} style={{
                   padding: '9px 18px', border: `1px solid ${T.rule}`, background: 'transparent',
                   borderRadius: 4, fontFamily: T.sans, fontSize: 13, color: T.ink2, cursor: 'pointer',
                 }}>Done</button>
-              <button
-                onClick={handleSubmit}
-                disabled={!canSave}
-                style={{
-                  padding: '9px 22px', border: 'none',
-                  background: canSave ? T.wine : T.rule,
-                  borderRadius: 4, fontFamily: T.sans, fontSize: 13, fontWeight: 600,
-                  color: canSave ? '#fbf6ec' : T.ink3, cursor: canSave ? 'pointer' : 'default',
-                  transition: 'background .15s',
-                }}>Save Entry</button>
+              )}
+              <button onClick={handleSubmit} disabled={!canSave} style={{
+                padding: '9px 22px', border: 'none',
+                background: canSave ? T.wine : T.rule,
+                borderRadius: 4, fontFamily: T.sans, fontSize: 13, fontWeight: 600,
+                color: canSave ? '#fbf6ec' : T.ink3, cursor: canSave ? 'pointer' : 'default',
+                transition: 'background .15s',
+              }}>{btnLabel}</button>
             </div>
           </div>
         </div>
 
-        {/* Recently added */}
-        {entries.length > 0 && (
+        {!isEditing && sessionEntries.length > 0 && (
           <div style={{ borderTop: `1px solid ${T.rule}`, padding: '14px 24px 22px' }}>
             <div style={{
               fontFamily: T.mono, fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase',
               color: T.ink3, marginBottom: 10,
-            }}>
-              Added by you · {entries.length} record{entries.length !== 1 ? 's' : ''}
-            </div>
+            }}>This session · {sessionEntries.length} record{sessionEntries.length !== 1 ? 's' : ''}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 260, overflowY: 'auto' }}>
-              {[...entries].reverse().map((r, i) => {
-                const realIdx = entries.length - 1 - i;
+              {[...sessionEntries].reverse().map((r, i) => {
+                const realIdx = sessionEntries.length - 1 - i;
+                const isEditingThis = editingIdx === realIdx;
                 return (
                   <div key={i} style={{
                     display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '7px 10px', background: T.card,
-                    borderRadius: 4, border: `1px solid ${T.ruleLight || T.rule}`,
+                    padding: '7px 10px',
+                    background: isEditingThis ? (T.cardAlt || T.card) : T.card,
+                    borderRadius: 4, border: `1px solid ${isEditingThis ? T.wine : (T.ruleLight || T.rule)}`,
                   }}>
                     <div style={{ fontFamily: T.mono, fontSize: 11, color: T.ink3, minWidth: 92 }}>{r.date}</div>
                     <div style={{ fontWeight: 600, fontSize: 12, minWidth: 42, color: T.wine }}>{r.campus}</div>
                     <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 13, color: T.ink2, flex: 1 }}>
                       {r.cat === 'Thursday Service' ? 'The Voice' : r.cat}
-                      {r.eventId && (() => { const ev = (window.loadEventRegistry() || []).find(e => e.id === r.eventId); return ev ? <span style={{ fontFamily: T.sans, fontStyle: 'normal', fontSize: 10, background: r.excludeFromWeekly ? 'rgba(166,133,52,0.15)' : 'rgba(125,58,53,0.12)', color: r.excludeFromWeekly ? T.gold : T.wine, borderRadius: 3, padding: '1px 5px', marginLeft: 6, fontWeight: 600 }}>{ev.name}</span> : null; })()}
+                      {r.eventId && (() => {
+                        const ev = (window.loadEventRegistry() || []).find(e => e.id === r.eventId);
+                        return ev ? <span style={{ fontFamily: T.sans, fontStyle: 'normal', fontSize: 10, background: r.excludeFromWeekly ? 'rgba(166,133,52,0.15)' : 'rgba(125,58,53,0.12)', color: r.excludeFromWeekly ? T.gold : T.wine, borderRadius: 3, padding: '1px 5px', marginLeft: 6, fontWeight: 600 }}>{ev.name}</span> : null;
+                      })()}
                     </div>
                     <div style={{
                       fontFamily: T.display, fontSize: 15, fontWeight: 600,
                       fontVariantNumeric: 'tabular-nums', minWidth: 52, textAlign: 'right',
                     }}>{r.total.toLocaleString()}</div>
-                    <button
-                      onClick={() => handleDelete(realIdx)}
-                      title="Remove this entry"
-                      style={{
-                        background: 'transparent', border: 'none', cursor: 'pointer',
-                        color: T.ink3, fontSize: 18, padding: '0 4px', lineHeight: 1,
-                      }}>×</button>
+                    <button onClick={() => handleEditSession(realIdx)} title="Edit" style={{
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      color: T.ink2, fontSize: 14, padding: '0 4px', lineHeight: 1,
+                    }}>✎</button>
+                    <button onClick={() => handleDeleteSession(realIdx)} title="Remove" style={{
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      color: T.ink3, fontSize: 18, padding: '0 4px', lineHeight: 1,
+                    }}>×</button>
                   </div>
                 );
               })}
@@ -3357,7 +3446,6 @@ function EField({ label, T, children }) {
   );
 }
 
-// ── Floating "+ Add Entry" button (host renders this; the modal is a separate component)
 function AddEntryFAB({ onClick, mobile }) {
   const T = window.M_THEME;
   return (
@@ -3758,6 +3846,7 @@ const MOBILE_BP = 900;
 function App() {
   const [isMobile, setIsMobile] = React.useState(window.innerWidth < MOBILE_BP);
   const [showEntry, setShowEntry] = React.useState(false);
+  const [editingRecord, setEditingRecord] = React.useState(null);
   const [dataVersion, setDataVersion] = React.useState(0);
   const [refreshVersion, setRefreshVersion] = React.useState(0);
   const [t, setT] = window.useTweaks({ density: 'comfortable' });
@@ -3783,6 +3872,9 @@ function App() {
     setRefreshVersion(v => v + 1);
   };
 
+  const handleEditRecord = (record) => setEditingRecord(record);
+  const handleEditClose = () => setEditingRecord(null);
+
   if (isMobile) {
     return (
       <React.Fragment>
@@ -3794,7 +3886,7 @@ function App() {
               <StatusBarRight/>
             </div>
             <div className="device-content">
-              <window.MobileView key={dataVersion} refreshVersion={refreshVersion} onAddEntry={() => setShowEntry(true)} onDataChange={handleDataChange} />
+              <window.MobileView key={dataVersion} refreshVersion={refreshVersion} onAddEntry={() => setShowEntry(true)} onDataChange={handleDataChange} onEditRecord={handleEditRecord} />
             </div>
             <div className="device-home"/>
           </div>
@@ -3806,17 +3898,31 @@ function App() {
             onSaved={handleSaved}
           />
         )}
+        {editingRecord && (
+          <window.DataEntryModal
+            editEntry={editingRecord}
+            onClose={handleEditClose}
+            onSaved={handleSaved}
+          />
+        )}
       </React.Fragment>
     );
   }
 
   return (
     <React.Fragment>
-      <window.MainView key={dataVersion} refreshVersion={refreshVersion} density={t.density} onDataChange={handleDataChange} />
+      <window.MainView key={dataVersion} refreshVersion={refreshVersion} density={t.density} onDataChange={handleDataChange} onEditRecord={handleEditRecord} />
       <window.AddEntryFAB onClick={() => setShowEntry(true)} />
       {showEntry && (
         <window.DataEntryModal
           onClose={() => setShowEntry(false)}
+          onSaved={handleSaved}
+        />
+      )}
+      {editingRecord && (
+        <window.DataEntryModal
+          editEntry={editingRecord}
+          onClose={handleEditClose}
           onSaved={handleSaved}
         />
       )}
