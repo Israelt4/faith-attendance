@@ -1320,8 +1320,11 @@ function MainView({ density = 'comfortable', onDataChange, onEditRecord }) {
   const dens = density === 'compact';
 
   const k = window.agg.kpis(ALL, TODAY);
-  const latest = k.latestWeek;
-  const prev = k.prevWeek;
+  const completed = k.completedWeeks;
+  const [weekIdx, setWeekIdx] = React.useState(completed.length - 1);
+  const safeIdx = Math.max(0, Math.min(weekIdx, completed.length - 1));
+  const latest = completed[safeIdx] || null;
+  const prev = safeIdx > 0 ? completed[safeIdx - 1] : null;
 
   // Same week last year
   const lastYearTotal = latest ? window.agg.sameWeekLastYear(ALL, latest.weekOf) : null;
@@ -1355,7 +1358,7 @@ function MainView({ density = 'comfortable', onDataChange, onEditRecord }) {
         {tab === 'overview' &&
         <OverviewTab T={T} dens={dens} latest={latest} prev={prev} lastYearTotal={lastYearTotal}
         wow={wow} yoy={yoy} k={k} latestRows={latestRows} campusCards={campusCards}
-        onOpenRecord={setDrawer} />
+        onOpenRecord={setDrawer} weekIdx={safeIdx} setWeekIdx={setWeekIdx} completedCount={completed.length} />
         }
         {tab === 'trends' && <TrendsTab T={T} dens={dens} k={k} />}
         {tab === 'campuses' && <CampusesTab T={T} dens={dens} />}
@@ -1430,7 +1433,7 @@ function Tabs({ T, tab, onChange }) {
 
 // ============= OVERVIEW (the 5-second answer) =============
 
-function OverviewTab({ T, dens, latest, prev, lastYearTotal, wow, yoy, k, latestRows, campusCards, onOpenRecord }) {
+function OverviewTab({ T, dens, latest, prev, lastYearTotal, wow, yoy, k, latestRows, campusCards, onOpenRecord, weekIdx, setWeekIdx, completedCount }) {
   if (!latest) return <div style={{ padding: 40, color: T.ink3 }}>No completed weeks of data.</div>;
 
   const _ytdYr = parseInt(latest.weekOf.slice(0, 4));
@@ -1442,6 +1445,25 @@ function OverviewTab({ T, dens, latest, prev, lastYearTotal, wow, yoy, k, latest
   const ytdDelta = ytdAvg && lyYtdAvg ? (ytdAvg - lyYtdAvg) / lyYtdAvg * 100 : null;
   return (
     <div style={{ padding: `${dens ? 20 : 28}px ${dens ? 20 : 28}px` }}>
+      {/* Week navigation */}
+      {completedCount > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: dens ? 16 : 20 }}>
+          <button
+            onClick={() => setWeekIdx((i) => Math.max(0, i - 1))}
+            disabled={weekIdx <= 0}
+            style={{ width: 32, height: 32, borderRadius: 4, border: `1px solid ${T.rule}`, background: 'transparent', color: weekIdx <= 0 ? T.ink3 : T.ink, cursor: weekIdx <= 0 ? 'default' : 'pointer', fontFamily: T.sans, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: weekIdx <= 0 ? 0.35 : 1 }}>←</button>
+          <div style={{ flex: 1, textAlign: 'center', fontFamily: T.sans, fontSize: 13, color: T.ink2 }}>
+            {weekIdx === completedCount - 1
+              ? <span style={{ fontFamily: T.mono, fontSize: 12, color: T.ink3, letterSpacing: '.06em' }}>Most recent · week of {latest.weekOf}</span>
+              : <span><span style={{ fontFamily: T.display, fontSize: 14, fontWeight: 500, color: T.wine }}>{completedCount - 1 - weekIdx}</span><span style={{ fontFamily: T.mono, fontSize: 12, color: T.ink3, letterSpacing: '.06em' }}> week{completedCount - 1 - weekIdx !== 1 ? 's' : ''} ago · week of {latest.weekOf}</span></span>
+            }
+          </div>
+          <button
+            onClick={() => setWeekIdx((i) => Math.min(completedCount - 1, i + 1))}
+            disabled={weekIdx >= completedCount - 1}
+            style={{ width: 32, height: 32, borderRadius: 4, border: `1px solid ${T.rule}`, background: 'transparent', color: weekIdx >= completedCount - 1 ? T.ink3 : T.ink, cursor: weekIdx >= completedCount - 1 ? 'default' : 'pointer', fontFamily: T.sans, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: weekIdx >= completedCount - 1 ? 0.35 : 1 }}>→</button>
+        </div>
+      )}
       {/* HERO */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: dens ? 16 : 20, marginBottom: dens ? 20 : 28 }}>
         {/* This week */}
