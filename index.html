@@ -16,10 +16,8 @@
   body { font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif; color: #231811; }
   *, *::before, *::after { box-sizing: border-box; }
   #root { height: 100%; width: 100%; }
-  /* Default background by viewport — JS keeps these in sync after mount */
   @media (max-width: 899px) { html, body { background: #1a120c; } }
   @media (min-width: 900px) { html, body { background: #f7f1e6; } }
-  /* ── Mobile shell ── */
   .stage {
     width: 100%; height: 100%;
     display: flex; align-items: center; justify-content: center;
@@ -214,15 +212,16 @@ window.groupCampusBuckets = function(rows, campusOrder) {
 
 // ── Event registry ────────────────────────────────────────────────────────────
 window.DEFAULT_EVENTS = [
-  { id: 'easter',          name: 'Easter',          countsTowardWeekly: true  },
-  { id: 'spring_compel',   name: 'Spring Compel',   countsTowardWeekly: true  },
-  { id: 'mothers_day',     name: "Mother's Day",     countsTowardWeekly: true  },
-  { id: 'fathers_day',     name: "Father's Day",     countsTowardWeekly: true  },
-  { id: 'fall_compel',     name: 'Fall Compel',     countsTowardWeekly: true  },
-  { id: 'awaken',          name: 'Awaken',          countsTowardWeekly: true  },
-  { id: 'fall_festival',   name: 'Fall Festival',   countsTowardWeekly: false },
-  { id: 'retreat',         name: 'The Retreat',     countsTowardWeekly: false },
-  { id: 'mainstream_camp', name: 'Mainstream Camp', countsTowardWeekly: false },
+  { id: 'easter',          name: 'Easter',                    countsTowardWeekly: true  },
+  { id: 'spring_compel',   name: 'Spring Compel',             countsTowardWeekly: true  },
+  { id: 'mothers_day',     name: "Mother's Day",               countsTowardWeekly: true  },
+  { id: 'fathers_day',     name: "Father's Day",               countsTowardWeekly: true  },
+  { id: 'fall_compel',     name: 'Fall Compel',               countsTowardWeekly: true  },
+  { id: 'awaken',          name: 'Awaken',                    countsTowardWeekly: true  },
+  { id: 'tvc',             name: 'The Voice Conference (TVC)', countsTowardWeekly: false },
+  { id: 'fall_festival',   name: 'Fall Festival',             countsTowardWeekly: false },
+  { id: 'retreat',         name: 'The Retreat',               countsTowardWeekly: false },
+  { id: 'mainstream_camp', name: 'Mainstream Camp',           countsTowardWeekly: false },
 ];
 
 window.loadEventRegistry = function() {
@@ -247,7 +246,12 @@ window.eventKey = function(r) {
   return r.date + '|' + r.campus + '|' + r.cat;
 };
 
-// Override mergeAttendance to apply event labels after merging base + stored
+// Override mergeAttendance to apply event labels with per-entry override support.
+// Priority for excludeFromWeekly:
+//   1. Entry's own boolean field (set via Add Entry toggle)
+//   2. Assignment's explicit override (set via service detail picker)
+//   3. Event's countsTowardWeekly default
+//   4. false (included by default)
 window.mergeAttendance = function() {
   var merged = window.BASE_ATTENDANCE.concat(window.loadStoredEntries());
   merged.sort(function(a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
@@ -255,13 +259,29 @@ window.mergeAttendance = function() {
   var registry = window.loadEventRegistry();
   var evMap = {};
   registry.forEach(function(ev) { evMap[ev.id] = ev; });
+
   window.ATTENDANCE = merged.map(function(r) {
     var key = window.eventKey(r);
-    var eventId = r.eventId || assignments[key] || null;
-    if (!eventId) return Object.assign({}, r, { eventId: null, eventName: null, excludeFromWeekly: false });
-    var ev = evMap[eventId];
-    if (!ev) return Object.assign({}, r, { eventId: eventId, eventName: eventId, excludeFromWeekly: false });
-    return Object.assign({}, r, { eventId: eventId, eventName: ev.name, excludeFromWeekly: !ev.countsTowardWeekly });
+    var asgn = assignments[key];
+    var assignedEventId = typeof asgn === 'string' ? asgn : (asgn && asgn.eventId) || null;
+    var assignmentExclude = (asgn && typeof asgn === 'object' && typeof asgn.excludeFromWeekly === 'boolean') ? asgn.excludeFromWeekly : null;
+
+    var eventId = r.eventId || assignedEventId || null;
+    var ev = eventId ? evMap[eventId] : null;
+    var eventName = ev ? ev.name : (eventId || null);
+
+    var excludeFromWeekly;
+    if (typeof r.excludeFromWeekly === 'boolean') {
+      excludeFromWeekly = r.excludeFromWeekly;
+    } else if (assignmentExclude !== null) {
+      excludeFromWeekly = assignmentExclude;
+    } else if (ev) {
+      excludeFromWeekly = !ev.countsTowardWeekly;
+    } else {
+      excludeFromWeekly = false;
+    }
+
+    return Object.assign({}, r, { eventId: eventId, eventName: eventName, excludeFromWeekly: excludeFromWeekly });
   });
 };
 
@@ -269,7 +289,7 @@ window.mergeAttendance();
 
 window.exportCSV = function() {
   var rows = window.ATTENDANCE;
-  var cols = ['date','campus','cat','main','fk','ms','total','notes','weekOf','year','month','quarter','eventId','eventName'];
+  var cols = ['date','campus','cat','main','fk','ms','total','notes','weekOf','year','month','quarter','eventId','eventName','excludeFromWeekly'];
   var lines = [cols.join(',')];
   rows.forEach(function(r) {
     lines.push(cols.map(function(c) {
@@ -1244,8 +1264,6 @@ window.fmtFull = fmtFull;
   }
 
   function sameWeekLastYear(rows, weekOf) {
-    // Build ordered list of all distinct Faith Church weekOf values per year
-    // from the full dataset so sparse campuses don't distort the index.
     const allWeeks = [...new Set(window.ATTENDANCE.map(r => r.weekOf))].sort();
     const byYear = {};
     allWeeks.forEach(w => {
@@ -1568,6 +1586,7 @@ function CampusRow({ T, c, dens }) {
         {has ?
         <>
             <div style={{ fontFamily: T.display, fontSize: 14, color: tone, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{good ? '↑' : '↓'} {Math.abs(c.delta).toFixed(0)}%</div>
+            <div style={{ fontFamily: T.mono, fontSize: 9, color: tone, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{c.prv ? (c.cur - c.prv >= 0 ? '+' : '') + Math.round(c.cur - c.prv).toLocaleString() : ''}</div>
             <div style={{ fontFamily: T.mono, fontSize: 9.5, color: T.ink3, letterSpacing: '.06em' }}>vs last wk</div>
           </> :
 
@@ -1801,8 +1820,10 @@ function CampusCard({ T, dens, c, k }) {
   const latest = k.latestWeek;
   const prev = k.prevWeek;
   const wow = latest && prev ? (latest.total - prev.total) / prev.total * 100 : null;
+  const wowAbs = latest && prev ? latest.total - prev.total : null;
   const lastYearTotal = latest ? window.agg.sameWeekLastYear(window.ATTENDANCE.filter((r) => r.campus === c), latest.weekOf) : null;
   const yoy = latest && lastYearTotal ? (latest.total - lastYearTotal) / lastYearTotal * 100 : null;
+  const yoyAbs = latest && lastYearTotal ? latest.total - lastYearTotal : null;
   const recent = k.completedWeeks.slice(-26);
 
   return (
@@ -1820,8 +1841,8 @@ function CampusCard({ T, dens, c, k }) {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 14 }}>
-        <MiniDelta T={T} label="vs last wk" delta={wow} />
-        <MiniDelta T={T} label="vs last yr" delta={yoy} />
+        <MiniDelta T={T} label="vs last wk" delta={wow} abs={wowAbs} />
+        <MiniDelta T={T} label="vs last yr" delta={yoy} abs={yoyAbs} />
         <div>
           <div style={{ fontFamily: T.mono, fontSize: 9.5, color: T.ink3, letterSpacing: '.16em', textTransform: 'uppercase' }}>Avg / wk</div>
           <div style={{ fontFamily: T.display, fontSize: 17, fontWeight: 500, fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{window.fmtFull(k.avgWeek)}</div>
@@ -1842,7 +1863,7 @@ function CampusCard({ T, dens, c, k }) {
 
 }
 
-function MiniDelta({ T, label, delta }) {
+function MiniDelta({ T, label, delta, abs }) {
   const has = delta != null && !isNaN(delta);
   const good = has && delta >= 0;
   const tone = !has ? T.ink3 : good ? T.good : T.bad;
@@ -1852,6 +1873,7 @@ function MiniDelta({ T, label, delta }) {
       <div style={{ fontFamily: T.display, fontSize: 17, fontWeight: 600, color: tone, fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>
         {!has ? '—' : (good ? '↑' : '↓') + ' ' + Math.abs(delta).toFixed(1) + '%'}
       </div>
+      {has && abs != null && <div style={{ fontFamily: T.mono, fontSize: 9.5, color: tone, fontVariantNumeric: 'tabular-nums', fontWeight: 600, marginTop: 1 }}>{abs >= 0 ? '+' : ''}{Math.round(abs).toLocaleString()}</div>}
     </div>);
 
 }
@@ -2152,7 +2174,7 @@ function MobileView({ onAddEntry, onDataChange }) {
 
     const txt = [
       `Faith Church · Week of ${w.weekOf}`,
-      `Total: ${window.fmtFull(w.total)}` + (wow != null ? `  (${wow >= 0 ? '+' : ''}${wow.toFixed(1)}% vs last wk)` : ''),
+      `Total: ${window.fmtFull(w.total)}` + (wow != null ? `  (${wow >= 0 ? '+' : ''}${wow.toFixed(1)}%, ${(w.total - prev.total) >= 0 ? '+' : ''}${Math.round(w.total - prev.total).toLocaleString()} vs last wk)` : ''),
       `Main ${window.fmtFull(w.main)} · FaithKids ${window.fmtFull(w.fk)} · Mainstream ${window.fmtFull(w.ms)}`,
       '',
       'By campus:',
@@ -2466,7 +2488,10 @@ function MCampusRow({ T, c, onTap }) {
       <div style={{ textAlign: 'right' }}>
         <div style={{ fontFamily: T.display, fontSize: 17, fontWeight: 500, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>{window.fmtFull(c.cur)}</div>
         {has ? (
-          <div style={{ fontFamily: T.mono, fontSize: 10, color: tone, fontWeight: 600, marginTop: 3, fontVariantNumeric: 'tabular-nums' }}>{good ? '↑' : '↓'} {Math.abs(c.delta).toFixed(0)}%</div>
+          <div style={{ fontVariantNumeric: 'tabular-nums' }}>
+            <div style={{ fontFamily: T.mono, fontSize: 10, color: tone, fontWeight: 600, marginTop: 3 }}>{good ? '↑' : '↓'} {Math.abs(c.delta).toFixed(0)}%</div>
+            {c.prv ? <div style={{ fontFamily: T.mono, fontSize: 9.5, color: tone, fontWeight: 600 }}>{(c.cur - c.prv >= 0 ? '+' : '') + Math.round(c.cur - c.prv).toLocaleString()}</div> : null}
+          </div>
         ) : <div style={{ fontFamily: T.mono, fontSize: 10, color: T.ink3, marginTop: 3 }}>—</div>}
       </div>
       <svg width="10" height="14" viewBox="0 0 8 14" style={{ color: T.ink3 }}><path d="M1 1l6 6-6 6" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -2682,8 +2707,10 @@ function MCampusCard({ T, c, k, rows, onTap }) {
   const latest = k.latestWeek;
   const prev = k.prevWeek;
   const wow = latest && prev ? (latest.total - prev.total) / prev.total * 100 : null;
+  const wowAbs = latest && prev ? latest.total - prev.total : null;
   const lastY = latest ? window.agg.sameWeekLastYear(rows, latest.weekOf) : null;
   const yoy = latest && lastY ? (latest.total - lastY) / lastY * 100 : null;
+  const yoyAbs = latest && lastY ? latest.total - lastY : null;
   const recent = k.completedWeeks.slice(-12);
   const has = wow != null && !isNaN(wow);
   const good = has && wow >= 0;
@@ -2710,19 +2737,20 @@ function MCampusCard({ T, c, k, rows, onTap }) {
         padding={{ t: 4, r: 4, b: 4, l: 4 }} gridColor="transparent" textColor="transparent" showDots={false}
       />
       <div style={{ display: 'flex', gap: 16, marginTop: 8, paddingTop: 8, borderTop: `1px solid ${T.ruleLight}` }}>
-        <MiniStat T={T} label="vs last wk" value={has ? `${good ? '↑' : '↓'} ${Math.abs(wow).toFixed(0)}%` : '—'} tone={has ? (good ? T.good : T.bad) : T.ink3} />
-        <MiniStat T={T} label="vs last yr" value={yoy != null ? `${yoy >= 0 ? '↑' : '↓'} ${Math.abs(yoy).toFixed(0)}%` : '—'} tone={yoy != null ? (yoy >= 0 ? T.good : T.bad) : T.ink3} />
+        <MiniStat T={T} label="vs last wk" value={has ? `${good ? '↑' : '↓'} ${Math.abs(wow).toFixed(0)}%` : '—'} tone={has ? (good ? T.good : T.bad) : T.ink3} sub={wowAbs != null ? (wowAbs >= 0 ? '+' : '') + Math.round(wowAbs).toLocaleString() : null} />
+        <MiniStat T={T} label="vs last yr" value={yoy != null ? `${yoy >= 0 ? '↑' : '↓'} ${Math.abs(yoy).toFixed(0)}%` : '—'} tone={yoy != null ? (yoy >= 0 ? T.good : T.bad) : T.ink3} sub={yoyAbs != null ? (yoyAbs >= 0 ? '+' : '') + Math.round(yoyAbs).toLocaleString() : null} />
         <MiniStat T={T} label="avg / wk" value={window.fmtFull(k.avgWeek)} tone={T.ink} />
       </div>
     </button>
   );
 }
 
-function MiniStat({ T, label, value, tone }) {
+function MiniStat({ T, label, value, tone, sub }) {
   return (
     <div style={{ flex: 1 }}>
       <div style={{ fontFamily: T.mono, fontSize: 8.5, color: T.ink3, letterSpacing: '.16em', textTransform: 'uppercase' }}>{label}</div>
       <div style={{ fontFamily: T.display, fontSize: 14, fontWeight: 600, color: tone, marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+      {sub && <div style={{ fontFamily: T.mono, fontSize: 9, color: tone, fontVariantNumeric: 'tabular-nums', fontWeight: 600, marginTop: 1 }}>{sub}</div>}
     </div>
   );
 }
@@ -2927,7 +2955,7 @@ function DataEntryModal({ onClose, onSaved }) {
     date: today,
     campus: window.CAMPUSES[0],
     cat: window.SERVICE_CATS[0],
-    main: '', fk: '', ms: '', notes: '', eventId: null,
+    main: '', fk: '', ms: '', notes: '', eventId: null, excludeFromWeekly: false,
   });
   const [savedFlash, setSavedFlash] = React.useState(false);
   const [entries, setEntries] = React.useState(() => window.loadStoredEntries());
@@ -2959,6 +2987,7 @@ function DataEntryModal({ onClose, onSaved }) {
       total,
       notes: form.notes,
       eventId: form.eventId || null,
+      excludeFromWeekly: !!form.excludeFromWeekly,
       weekOf: getWeekOf(form.date),
       year: d.getFullYear(),
       month: d.getMonth() + 1,
@@ -2975,7 +3004,7 @@ function DataEntryModal({ onClose, onSaved }) {
     setEntries(all);
     onSaved();
     // keep campus/service; clear counts for fast multi-row entry
-    setForm((f) => ({ ...f, main: '', fk: '', ms: '', notes: '', eventId: null }));
+    setForm((f) => ({ ...f, main: '', fk: '', ms: '', notes: '', eventId: null, excludeFromWeekly: false }));
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 2000);
   };
@@ -3086,14 +3115,28 @@ function DataEntryModal({ onClose, onSaved }) {
 
           <EField label="Special Event (optional)" T={T}>
             <div style={{ marginTop: 8 }}>
-              <select value={form.eventId || ''} onChange={(e) => set('eventId', e.target.value || null)} style={iSt}>
+              <select value={form.eventId || ''} onChange={(e) => {
+                const id = e.target.value || null;
+                set('eventId', id);
+                if (id) {
+                  const ev = (window.loadEventRegistry() || []).find(ev => ev.id === id);
+                  set('excludeFromWeekly', ev ? !ev.countsTowardWeekly : false);
+                } else {
+                  set('excludeFromWeekly', false);
+                }
+              }} style={iSt}>
                 <option value="">— None —</option>
                 {(window.loadEventRegistry() || []).map((ev) => (
-                  <option key={ev.id} value={ev.id}>
-                    {ev.name}{ev.countsTowardWeekly ? '' : ' ⚠ excl. weekly'}
-                  </option>
+                  <option key={ev.id} value={ev.id}>{ev.name}</option>
                 ))}
               </select>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer', fontFamily: T.sans, fontSize: 13, color: T.ink2, userSelect: 'none' }}>
+                <input type="checkbox" checked={!form.excludeFromWeekly}
+                  onChange={(e) => set('excludeFromWeekly', !e.target.checked)}
+                  style={{ width: 15, height: 15, accentColor: T.wine }} />
+                Include in weekly totals
+                {form.excludeFromWeekly && <span style={{ fontFamily: T.mono, fontSize: 10, color: T.gold, letterSpacing: '.06em' }}>⚠ excluded</span>}
+              </label>
             </div>
           </EField>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20 }}>
@@ -3144,7 +3187,7 @@ function DataEntryModal({ onClose, onSaved }) {
                     <div style={{ fontWeight: 600, fontSize: 12, minWidth: 42, color: T.wine }}>{r.campus}</div>
                     <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 13, color: T.ink2, flex: 1 }}>
                       {r.cat === 'Thursday Service' ? 'The Voice' : r.cat}
-                      {r.eventId && (() => { const ev = (window.loadEventRegistry() || []).find(e => e.id === r.eventId); return ev ? <span style={{ fontFamily: T.sans, fontStyle: 'normal', fontSize: 10, background: ev.countsTowardWeekly ? 'rgba(125,58,53,0.12)' : 'rgba(166,133,52,0.15)', color: ev.countsTowardWeekly ? T.wine : T.gold, borderRadius: 3, padding: '1px 5px', marginLeft: 6, fontWeight: 600 }}>{ev.name}</span> : null; })()}
+                      {r.eventId && (() => { const ev = (window.loadEventRegistry() || []).find(e => e.id === r.eventId); return ev ? <span style={{ fontFamily: T.sans, fontStyle: 'normal', fontSize: 10, background: r.excludeFromWeekly ? 'rgba(166,133,52,0.15)' : 'rgba(125,58,53,0.12)', color: r.excludeFromWeekly ? T.gold : T.wine, borderRadius: 3, padding: '1px 5px', marginLeft: 6, fontWeight: 600 }}>{ev.name}</span> : null; })()}
                     </div>
                     <div style={{
                       fontFamily: T.display, fontSize: 15, fontWeight: 600,
@@ -3219,53 +3262,76 @@ window.AddEntryFAB = AddEntryFAB;
 
 // ── EventAssignPicker — shown in service detail drawers/sheets ────────────────
 function EventAssignPicker({ T, record, onDataChange }) {
-  const [assignments, setAssignments] = React.useState(() => window.loadEventAssignments());
-  const [flash, setFlash] = React.useState(false);
   const events = window.loadEventRegistry();
   const key = window.eventKey(record);
-  const currentId = record.eventId || assignments[key] || '';
 
-  const handleChange = (eventId) => {
+  const initState = () => {
+    const assignments = window.loadEventAssignments();
+    const asgn = assignments[key];
+    const assignedId = typeof asgn === 'string' ? asgn : (asgn && asgn.eventId) || null;
+    const assignmentExclude = (asgn && typeof asgn === 'object' && typeof asgn.excludeFromWeekly === 'boolean') ? asgn.excludeFromWeekly : null;
+    const eventId = record.eventId || assignedId || '';
+    let exclude;
+    if (assignmentExclude !== null) { exclude = assignmentExclude; }
+    else if (typeof record.excludeFromWeekly === 'boolean') { exclude = record.excludeFromWeekly; }
+    else if (eventId) { const ev = events.find(e => e.id === eventId); exclude = ev ? !ev.countsTowardWeekly : false; }
+    else { exclude = false; }
+    return { eventId, exclude };
+  };
+
+  const s0 = initState();
+  const [currentId, setCurrentId] = React.useState(s0.eventId);
+  const [exclude, setExclude] = React.useState(s0.exclude);
+  const [flash, setFlash] = React.useState(false);
+
+  const doSave = (eventId, excl) => {
+    const assignments = window.loadEventAssignments();
     const next = { ...assignments };
-    if (eventId) { next[key] = eventId; } else { delete next[key]; }
+    if (eventId) { next[key] = { eventId, excludeFromWeekly: excl }; } else { delete next[key]; }
     window.saveEventAssignments(next);
-    setAssignments(next);
     window.mergeAttendance();
     if (onDataChange) onDataChange();
     setFlash(true);
     setTimeout(() => setFlash(false), 1400);
   };
 
+  const handleEventChange = (id) => {
+    setCurrentId(id);
+    let newExclude = exclude;
+    if (id) {
+      const ev = events.find(e => e.id === id);
+      if (ev) { newExclude = !ev.countsTowardWeekly; setExclude(newExclude); }
+    } else { newExclude = false; setExclude(false); }
+    doSave(id, newExclude);
+  };
+
+  const handleExcludeChange = (val) => {
+    setExclude(val);
+    doSave(currentId, val);
+  };
+
   const selSt = {
     width: '100%', height: 36, padding: '0 10px',
     border: `1px solid ${T.rule}`, borderRadius: 4,
-    background: T.card, color: T.ink,
-    fontFamily: T.sans, fontSize: 13, outline: 'none',
+    background: T.card, color: T.ink, fontFamily: T.sans, fontSize: 13, outline: 'none',
   };
-  const currentEv = events.find(e => e.id === currentId);
 
   return (
     <div style={{ marginTop: 18, paddingTop: 16, borderTop: `1px solid ${T.rule}` }}>
-      <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3, marginBottom: 8 }}>
-        Special Event
-      </div>
+      <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3, marginBottom: 8 }}>Special Event</div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <select value={currentId} onChange={(e) => handleChange(e.target.value)} style={{ ...selSt, flex: 1 }}>
+        <select value={currentId} onChange={(e) => handleEventChange(e.target.value)} style={{ ...selSt, flex: 1 }}>
           <option value="">— None —</option>
-          {events.map(ev => (
-            <option key={ev.id} value={ev.id}>
-              {ev.name}{ev.countsTowardWeekly ? '' : ' ⚠ excl. weekly'}
-            </option>
-          ))}
+          {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
         </select>
-        <span style={{ fontFamily: T.mono, fontSize: 10, color: T.sage, letterSpacing: '.06em', opacity: flash ? 1 : 0, transition: 'opacity .3s', flexShrink: 0 }}>
-          ✓ saved
-        </span>
+        <span style={{ fontFamily: T.mono, fontSize: 10, color: T.sage, letterSpacing: '.06em', opacity: flash ? 1 : 0, transition: 'opacity .3s', flexShrink: 0 }}>✓ saved</span>
       </div>
-      {currentEv && !currentEv.countsTowardWeekly && (
-        <div style={{ marginTop: 6, fontFamily: T.sans, fontSize: 11, color: T.gold }}>
-          ⚠ This event's attendance is excluded from weekly totals
-        </div>
+      {currentId && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer', fontFamily: T.sans, fontSize: 13, color: T.ink2, userSelect: 'none' }}>
+          <input type="checkbox" checked={!exclude} onChange={(e) => handleExcludeChange(!e.target.checked)} style={{ width: 15, height: 15, accentColor: T.wine }} />
+          Include in weekly totals
+          {exclude && <span style={{ fontFamily: T.mono, fontSize: 10, color: T.gold, letterSpacing: '.06em', marginLeft: 4 }}>⚠ excluded</span>}
+        </label>
       )}
     </div>
   );
@@ -3275,7 +3341,6 @@ function EventAssignPicker({ T, record, onDataChange }) {
 function EventsTab({ T, dens }) {
   const events = window.loadEventRegistry();
   const ALL = window.ATTENDANCE;
-  const [, rerender] = React.useReducer(x => x + 1, 0);
 
   function buildEventData(ev) {
     const rows = ALL.filter(r => r.eventId === ev.id);
@@ -3327,13 +3392,19 @@ function EventsTab({ T, dens }) {
                 {years.map((y, i) => {
                   const prior = years[i - 1];
                   const delta = prior ? (y.total - prior.total) / prior.total * 100 : null;
+                  const absChg = prior ? y.total - prior.total : null;
                   const up = delta != null && delta >= 0;
                   return (
                     <tr key={y.year} style={{ borderBottom: `1px solid ${T.ruleLight || T.rule}` }}>
                       <td style={{ padding: '9px 14px', fontFamily: T.mono, fontSize: 12, color: T.ink2 }}>{y.year}</td>
                       <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: T.display, fontSize: 16, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{y.total.toLocaleString()}</td>
-                      <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: T.mono, fontSize: 11, color: delta == null ? T.ink3 : (up ? T.good : T.bad) }}>
-                        {delta == null ? '—' : (up ? '+' : '') + delta.toFixed(1) + '%'}
+                      <td style={{ padding: '9px 14px', textAlign: 'right' }}>
+                        {delta == null ? <span style={{ fontFamily: T.mono, fontSize: 11, color: T.ink3 }}>—</span> : (
+                          <span style={{ color: up ? T.good : T.bad }}>
+                            <div style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 600 }}>{(up ? '+' : '') + delta.toFixed(1) + '%'}</div>
+                            <div style={{ fontFamily: T.mono, fontSize: 9.5, fontVariantNumeric: 'tabular-nums', marginTop: 1 }}>{(absChg >= 0 ? '+' : '') + Math.round(absChg).toLocaleString()}</div>
+                          </span>
+                        )}
                       </td>
                       <td style={{ padding: '9px 14px', textAlign: 'right', color: T.ink3, fontSize: 12 }}>{y.serviceCount}</td>
                     </tr>
@@ -3388,13 +3459,21 @@ function MEventsTab({ T }) {
             {years.map((y, i) => {
               const prior = years[i - 1];
               const delta = prior ? (y.total - prior.total) / prior.total * 100 : null;
+              const absChg = prior ? y.total - prior.total : null;
               const up = delta != null && delta >= 0;
               return (
                 <div key={y.year} style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', borderBottom: i < years.length - 1 ? `1px solid ${T.ruleLight || T.rule}` : 'none' }}>
                   <div style={{ fontFamily: T.mono, fontSize: 12, color: T.ink2, width: 48 }}>{y.year}</div>
                   <div style={{ flex: 1, fontFamily: T.display, fontSize: 18, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{y.total.toLocaleString()}</div>
-                  <div style={{ fontFamily: T.mono, fontSize: 11.5, color: delta == null ? T.ink3 : (up ? T.good : T.bad) }}>
-                    {delta == null ? '—' : (up ? '+' : '') + delta.toFixed(1) + '%'}
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontFamily: T.mono, fontSize: 11.5, fontWeight: 600, color: delta == null ? T.ink3 : (up ? T.good : T.bad) }}>
+                      {delta == null ? '—' : (up ? '+' : '') + delta.toFixed(1) + '%'}
+                    </div>
+                    {absChg != null && (
+                      <div style={{ fontFamily: T.mono, fontSize: 9.5, fontVariantNumeric: 'tabular-nums', color: up ? T.good : T.bad, fontWeight: 600, marginTop: 1 }}>
+                        {(absChg >= 0 ? '+' : '') + Math.round(absChg).toLocaleString()}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
