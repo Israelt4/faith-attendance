@@ -1188,14 +1188,22 @@ window.fmtFull = fmtFull;
   }
 
   function sameWeekLastYear(rows, weekOf) {
-    const target = new Date(weekOf + 'T00:00:00');
-    target.setDate(target.getDate() - 7*52); // ~1 yr earlier
-    const tgtIso = isoWeek(weekOf);
-    const tgtYear = new Date(weekOf + 'T00:00:00').getFullYear() - 1;
-    // find weekOf in last year with same ISO week
-    const candidates = rows.filter(r => r.year === tgtYear && isoWeek(r.weekOf) === tgtIso);
-    if (!candidates.length) return null;
-    return candidates.reduce((s,r)=> s+(r.total||0), 0);
+    // Build ordered list of all distinct Faith Church weekOf values per year
+    // from the full dataset so sparse campuses don't distort the index.
+    const allWeeks = [...new Set(window.ATTENDANCE.map(r => r.weekOf))].sort();
+    const byYear = {};
+    allWeeks.forEach(w => {
+      const yr = parseInt(w.slice(0, 4));
+      if (!byYear[yr]) byYear[yr] = [];
+      byYear[yr].push(w);
+    });
+    const yr = parseInt(weekOf.slice(0, 4));
+    const idx = (byYear[yr] || []).indexOf(weekOf);
+    if (idx === -1) return null;
+    const priorWeekOf = (byYear[yr - 1] || [])[idx];
+    if (!priorWeekOf) return null;
+    const matched = rows.filter(r => r.weekOf === priorWeekOf);
+    return matched.length ? matched.reduce((s, r) => s + (r.total || 0), 0) : null;
   }
 
   window.agg = { applyFilter, byWeek, byMonth, byCampus, byCat, heatmap, kpis, isCompleteWeek, isoWeek, sameWeekLastYear };
