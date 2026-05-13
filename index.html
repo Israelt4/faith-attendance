@@ -2286,6 +2286,8 @@ function MobileView({ onAddEntry, onDataChange, onEditRecord }) {
 
     // pull-to-refresh
     if (pullY > 55) {
+      window.mergeAttendance();
+      if (onDataChange) onDataChange();
       setRefreshing(true);
       setPullY(40);
       setTimeout(() => { setRefreshing(false); setPullY(0); showToast('Refreshed · ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })); }, 850);
@@ -4021,6 +4023,18 @@ function App() {
     document.body.style.background = isMobile ? '#1a120c' : '#f7f1e6';
     document.body.style.overscrollBehavior = isMobile ? 'none' : '';
   }, [isMobile]);
+
+  // Sync data when another tab saves to localStorage
+  React.useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === 'fc_attendance_entries' || e.key === 'fc_event_assignments' || e.key === 'fc_event_registry') {
+        window.mergeAttendance();
+        setDataVersion(v => v + 1);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   const handleSaved = () => {
     window.mergeAttendance();
