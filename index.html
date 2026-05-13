@@ -4226,8 +4226,16 @@ const waitFor = (cond) => new Promise(r => {
 
 (async () => {
   try {
-    const _r = await fetch('https://raw.githubusercontent.com/Israelt4/faith-attendance/main/manual-entries.json', { cache: 'no-store' });
-    if (_r.ok) { window.PUBLISHED_ENTRIES = await _r.json(); window.mergeAttendance(); }
+    const _TOKEN = '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';
+    const _r = await fetch('https://api.github.com/repos/Israelt4/faith-attendance/contents/manual-entries.json', {
+      headers: { 'Authorization': 'Bearer ' + _TOKEN, 'Accept': 'application/vnd.github+json' },
+      cache: 'no-store'
+    });
+    if (_r.ok) {
+      const _j = await _r.json();
+      window.PUBLISHED_ENTRIES = JSON.parse(atob(_j.content.replace(/\s/g, '')));
+      window.mergeAttendance();
+    }
   } catch(_e) {}
 
   await waitFor(() =>
