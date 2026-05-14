@@ -1535,12 +1535,17 @@ function Tabs({ T, tab, onChange }) {
 function OverviewTab({ T, dens, latest, prev, lastYearTotal, wow, yoy, k, latestRows, campusCards, onOpenRecord, weekIdx, setWeekIdx, completedCount }) {
   if (!latest) return <div style={{ padding: 40, color: T.ink3 }}>No completed weeks of data.</div>;
 
+  const _ytdYr = parseInt(latest.weekOf.slice(0, 4));
+  const _cWks = k.completedWeeks.filter(w => parseInt(w.weekOf.slice(0, 4)) === _ytdYr && w.weekOf <= latest.weekOf);
+  const _ytdN = _cWks.length;
+  const ytdAvg = _ytdN > 0 ? _cWks.reduce((s, w) => s + w.total, 0) / _ytdN : null;
+  const _pWks = k.completedWeeks.filter(w => parseInt(w.weekOf.slice(0, 4)) === _ytdYr - 1).slice(0, _ytdN);
+  const lyYtdAvg = _pWks.length > 0 ? _pWks.reduce((s, w) => s + w.total, 0) / _pWks.length : null;
+  const ytdDelta = ytdAvg && lyYtdAvg ? (ytdAvg - lyYtdAvg) / lyYtdAvg * 100 : null;
   const sundayRows = latestRows.filter(r => window.bucketOf(r) === 'Sunday');
   const midweekRows = latestRows.filter(r => window.bucketOf(r) === 'Midweek');
   const sundayTotal = sundayRows.reduce((s,r) => s+(r.total||0), 0);
   const midweekTotal = midweekRows.reduce((s,r) => s+(r.total||0), 0);
-
-  // Hero: This week's total + two delta cards
   return (
     <div style={{ padding: `${dens ? 20 : 28}px ${dens ? 20 : 28}px` }}>
       {/* Week navigation */}
