@@ -2586,10 +2586,6 @@ function MOverview({ T, completed, weekIdx, setWeekIdx, ALL, k, onOpenCampus, on
   const _pWks = completed.filter(wk => parseInt(wk.weekOf.slice(0, 4)) === _ytdYr - 1).slice(0, _ytdN);
   const lyYtdAvg = _pWks.length > 0 ? _pWks.reduce((s, wk) => s + wk.total, 0) / _pWks.length : null;
   const ytdDelta = ytdAvg && lyYtdAvg ? (ytdAvg - lyYtdAvg) / lyYtdAvg * 100 : null;
-  const sundayRows = wkRows.filter(r => window.bucketOf(r) === 'Sunday');
-  const midweekRows = wkRows.filter(r => window.bucketOf(r) === 'Midweek');
-  const sundayTotal = sundayRows.reduce((s,r) => s+(r.total||0), 0);
-  const midweekTotal = midweekRows.reduce((s,r) => s+(r.total||0), 0);
 
   const wkRows = ALL.filter((r) => r.weekOf === w.weekOf);
   const prevRows = prev ? ALL.filter((r) => r.weekOf === prev.weekOf) : [];
@@ -2601,6 +2597,10 @@ function MOverview({ T, completed, weekIdx, setWeekIdx, ALL, k, onOpenCampus, on
   }).filter((c) => c.cur > 0).sort((a, b) => b.cur - a.cur);
 
   const last8 = completed.slice(Math.max(0, weekIdx - 7), weekIdx + 1);
+  const sundayRows = wkRows.filter(r => window.bucketOf(r) === 'Sunday');
+  const midweekRows = wkRows.filter(r => window.bucketOf(r) === 'Midweek');
+  const sundayTotal = sundayRows.reduce((s,r) => s+(r.total||0), 0);
+  const midweekTotal = midweekRows.reduce((s,r) => s+(r.total||0), 0);
 
   return (
     <div style={{ padding: '14px 16px 24px' }}>
