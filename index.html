@@ -1614,6 +1614,26 @@ function OverviewTab({ T, dens, latest, prev, lastYearTotal, wow, yoy, k, latest
         </div>
       )}
 
+      {(() => {
+        const seen = new Set(); const evCards = [];
+        (latestRows || []).forEach(r => {
+          if (r.eventId && !seen.has(r.eventId)) {
+            seen.add(r.eventId);
+            const evRows = (latestRows || []).filter(x => x.eventId === r.eventId);
+            const total = evRows.reduce((s, x) => s + (x.total || 0), 0);
+            const yr = parseInt(latest.weekOf.slice(0, 4));
+            const lyRows = window.ATTENDANCE.filter(x => x.eventId === r.eventId && x.year === yr - 1);
+            const lastYearTotal = lyRows.length ? lyRows.reduce((s, x) => s + (x.total || 0), 0) : null;
+            evCards.push({ eventId: r.eventId, eventName: r.eventName, total, lastYearTotal });
+          }
+        });
+        return evCards.length > 0 ? (
+          <div style={{ marginBottom: dens ? 16 : 20, display: 'flex', flexDirection: 'column', gap: dens ? 10 : 14 }}>
+            {evCards.map(ev => <window.EventHighlightCard key={ev.eventId} T={T} dens={dens} ev={ev} />)}
+          </div>
+        ) : null;
+      })()}
+
       {/* Sub-row: per-campus snapshot + spark */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: dens ? 16 : 20, marginBottom: dens ? 20 : 28 }}>
         <div style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 6, padding: dens ? 16 : 20 }}>
@@ -2640,6 +2660,21 @@ function MOverview({ T, completed, weekIdx, setWeekIdx, ALL, k, onOpenCampus, on
         <MDelta T={T} label="YTD avg vs last yr" delta={ytdDelta} cur={ytdAvg ? Math.round(ytdAvg) : w.total} prevN={lyYtdAvg ? Math.round(lyYtdAvg) : null} />
       </div>
 
+      {(sundayTotal > 0 || midweekTotal > 0) && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+          <div style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 8, padding: '14px 16px' }}>
+            <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '.18em', textTransform: 'uppercase', color: T.ink3, marginBottom: 4 }}>Sunday</div>
+            <div style={{ fontFamily: T.display, fontSize: 30, fontWeight: 500, lineHeight: .95, fontVariantNumeric: 'tabular-nums', marginBottom: 8 }}>{window.fmtFull(sundayTotal)}</div>
+            <div style={{ fontFamily: T.sans, fontSize: 11, color: T.ink2 }}>{window.fmtFull(sundayRows.reduce((s,r)=>s+(r.main||0),0))} main · {window.fmtFull(sundayRows.reduce((s,r)=>s+(r.fk||0),0))} kids</div>
+          </div>
+          <div style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 8, padding: '14px 16px' }}>
+            <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '.18em', textTransform: 'uppercase', color: T.ink3, marginBottom: 4 }}>Midweek</div>
+            <div style={{ fontFamily: T.display, fontSize: 30, fontWeight: 500, lineHeight: .95, fontVariantNumeric: 'tabular-nums', marginBottom: 8 }}>{window.fmtFull(midweekTotal)}</div>
+            <div style={{ fontFamily: T.sans, fontSize: 11, color: T.ink2 }}>{window.fmtFull(midweekRows.reduce((s,r)=>s+(r.main||0),0))} main · {window.fmtFull(midweekRows.reduce((s,r)=>s+(r.ms||0),0))} ms</div>
+          </div>
+        </div>
+      )}
+
       {(() => {
         const seen = new Set(); const evCards = [];
         wkRows.forEach(r => {
@@ -2659,21 +2694,6 @@ function MOverview({ T, completed, weekIdx, setWeekIdx, ALL, k, onOpenCampus, on
           </div>
         ) : null;
       })()}
-
-      {(sundayTotal > 0 || midweekTotal > 0) && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
-          <div style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 8, padding: '14px 16px' }}>
-            <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '.18em', textTransform: 'uppercase', color: T.ink3, marginBottom: 4 }}>Sunday</div>
-            <div style={{ fontFamily: T.display, fontSize: 30, fontWeight: 500, lineHeight: .95, fontVariantNumeric: 'tabular-nums', marginBottom: 8 }}>{window.fmtFull(sundayTotal)}</div>
-            <div style={{ fontFamily: T.sans, fontSize: 11, color: T.ink2 }}>{window.fmtFull(sundayRows.reduce((s,r)=>s+(r.main||0),0))} main · {window.fmtFull(sundayRows.reduce((s,r)=>s+(r.fk||0),0))} kids</div>
-          </div>
-          <div style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 8, padding: '14px 16px' }}>
-            <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '.18em', textTransform: 'uppercase', color: T.ink3, marginBottom: 4 }}>Midweek</div>
-            <div style={{ fontFamily: T.display, fontSize: 30, fontWeight: 500, lineHeight: .95, fontVariantNumeric: 'tabular-nums', marginBottom: 8 }}>{window.fmtFull(midweekTotal)}</div>
-            <div style={{ fontFamily: T.sans, fontSize: 11, color: T.ink2 }}>{window.fmtFull(midweekRows.reduce((s,r)=>s+(r.main||0),0))} main · {window.fmtFull(midweekRows.reduce((s,r)=>s+(r.ms||0),0))} ms</div>
-          </div>
-        </div>
-      )}
 
       {/* Campuses */}
       <div style={{ marginBottom: 18 }}>
