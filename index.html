@@ -69,6 +69,9 @@
     .desktop-caption { display: none; }
   }
 </style>
+<script>
+(function(){var s=localStorage.getItem('fc_font_size')||'normal';var z={normal:1,large:1.15,xlarge:1.3}[s]||1;if(z!==1)document.documentElement.style.zoom=z;})();
+</script>
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
@@ -1469,6 +1472,39 @@ function MainView({ density = 'comfortable', onDataChange, onEditRecord }) {
 
 }
 
+function FontSizePicker({ T }) {
+  const SIZES = [
+    { key: 'normal', label: 'A', fs: 11 },
+    { key: 'large',  label: 'A', fs: 14 },
+    { key: 'xlarge', label: 'A', fs: 17 },
+  ];
+  const [size, setSize] = React.useState(() => {
+    try { return localStorage.getItem('fc_font_size') || 'normal'; } catch(e) { return 'normal'; }
+  });
+  const apply = (s) => {
+    setSize(s);
+    try { localStorage.setItem('fc_font_size', s); } catch(e) {}
+    const scales = { normal: 1, large: 1.15, xlarge: 1.3 };
+    document.documentElement.style.zoom = scales[s] || 1;
+  };
+  return (
+    <div title="Text size" style={{ display: 'flex', alignItems: 'center', border: `1px solid ${T.rule}`, borderRadius: 4, overflow: 'hidden', height: 30, flexShrink: 0 }}>
+      {SIZES.map(({ key, label, fs }, i) => (
+        <button key={key} onClick={() => apply(key)}
+          style={{
+            width: 26, height: '100%', border: 'none',
+            borderRight: i < SIZES.length - 1 ? `1px solid ${T.rule}` : 'none',
+            background: size === key ? T.wine : 'transparent',
+            color: size === key ? '#fbf6ec' : T.ink3,
+            cursor: 'pointer', fontSize: fs, fontWeight: 700,
+            fontFamily: T.sans, display: 'flex', alignItems: 'center',
+            justifyContent: 'center', lineHeight: 1, padding: 0
+          }}>A</button>
+      ))}
+    </div>
+  );
+}
+
 function Masthead({ T, dens, latest }) {
   return (
     <div style={{ padding: `${dens ? 14 : 18}px ${dens ? 20 : 28}px`, borderBottom: `1px solid ${T.rule}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1490,6 +1526,7 @@ function Masthead({ T, dens, latest }) {
             <div style={{ fontFamily: T.display, fontSize: 15, fontStyle: 'italic', color: T.ink2, marginTop: 2 }}>Week of {latest.weekOf}</div>
           </div>
         }
+        <FontSizePicker T={T} />
         <window.PublishButton T={T} />
         <button onClick={() => window.exportCSV()} style={{ padding: '7px 13px', border: `1px solid ${T.rule}`, background: 'transparent', borderRadius: 4, fontFamily: T.sans, fontSize: 11.5, color: T.ink2, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
@@ -2548,6 +2585,7 @@ function MobileHeader({ T, tab, onShare, weekLabel, onAddEntry }) {
           </svg>
         </button>
       )}
+      <FontSizePicker T={T} />
       <window.PublishButton T={T} mobile={true} />
       <button onClick={onShare} aria-label="Share" style={{
         width: 38, height: 38, borderRadius: 999, border: `1px solid ${T.rule}`, background: T.card,
