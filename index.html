@@ -287,7 +287,17 @@ window.mergeAttendance = function() {
       excludeFromWeekly = false;
     }
 
-    return Object.assign({}, r, { eventId: eventId, eventName: eventName, excludeFromWeekly: excludeFromWeekly });
+    // Manual CFC-Wednesday entries store Mainstream High in `ms` and Mainstream
+    // Middle in `msM`. Normalize to the same shape the base data uses (see
+    // mergeCFCWedMM): `ms` = combined Mainstream, with msHigh/msMiddle as the
+    // split. This lets every downstream consumer keep summing `ms`.
+    var norm = (r.msM != null)
+      ? { ms: (r.ms || 0) + (r.msM || 0),
+          msHigh: (r.msHigh != null ? r.msHigh : (r.ms || 0)),
+          msMiddle: (r.msMiddle != null ? r.msMiddle : (r.msM || 0)) }
+      : {};
+
+    return Object.assign({}, r, { eventId: eventId, eventName: eventName, excludeFromWeekly: excludeFromWeekly }, norm);
   });
 };
 
@@ -1579,10 +1589,11 @@ function OverviewTab({ T, dens, latest, prev, lastYearTotal, wow, yoy, k, latest
   const _pWks = k.completedWeeks.filter(w => parseInt(w.weekOf.slice(0, 4)) === _ytdYr - 1).slice(0, _ytdN);
   const lyYtdAvg = _pWks.length > 0 ? _pWks.reduce((s, w) => s + w.total, 0) / _pWks.length : null;
   const ytdDelta = ytdAvg && lyYtdAvg ? (ytdAvg - lyYtdAvg) / lyYtdAvg * 100 : null;
-  const sundayRows = latestRows.filter(r => window.bucketOf(r) === 'Sunday');
-  const midweekRows = latestRows.filter(r => window.bucketOf(r) === 'Midweek');
+  const sundayRows = latestRows.filter(r => window.bucketOf(r) === 'Sunday' && !r.excludeFromWeekly);
+  const midweekRows = latestRows.filter(r => window.bucketOf(r) === 'Midweek' && !r.excludeFromWeekly);
   const sundayTotal = sundayRows.reduce((s,r) => s+(r.total||0), 0);
   const midweekTotal = midweekRows.reduce((s,r) => s+(r.total||0), 0);
+  const [breakdown, setBreakdown] = React.useState(null); // 'Sunday' | 'Midweek' | null
   return (
     <div style={{ padding: `${dens ? 20 : 28}px ${dens ? 20 : 28}px` }}>
       {/* Week navigation */}
@@ -1631,16 +1642,23 @@ function OverviewTab({ T, dens, latest, prev, lastYearTotal, wow, yoy, k, latest
       {/* Sunday / Midweek split */}
       {(sundayTotal > 0 || midweekTotal > 0) && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: dens ? 16 : 20, marginBottom: dens ? 20 : 28 }}>
-          <div style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 6, padding: dens ? 16 : 22 }}>
-            <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3, marginBottom: 6 }}>Sunday · all campuses</div>
+          <div onClick={() => setBreakdown('Sunday')} title="Click to see every Sunday entry for this week" style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 6, padding: dens ? 16 : 22, cursor: 'pointer' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+              <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3 }}>Sunday · all campuses</div>
+              <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: '.12em', textTransform: 'uppercase', color: T.wine }}>View entries ›</div>
+            </div>
             <div style={{ fontFamily: T.display, fontSize: dens ? 40 : 52, fontWeight: 500, lineHeight: .9, letterSpacing: '-0.025em', fontVariantNumeric: 'tabular-nums', marginBottom: 12 }}>{window.fmtFull(sundayTotal)}</div>
             <div style={{ display: 'flex', gap: 18, fontFamily: T.sans, fontSize: 12.5, color: T.ink2, paddingTop: 10, borderTop: `1px solid ${T.ruleLight}` }}>
               <Bullet T={T} label="Main Service" value={sundayRows.reduce((s,r) => s+(r.main||0), 0)} color={T.wine} />
               <Bullet T={T} label="FaithKids" value={sundayRows.reduce((s,r) => s+(r.fk||0), 0)} color={T.clay} />
+              {sundayRows.reduce((s,r) => s+(r.ms||0), 0) > 0 && <Bullet T={T} label="Mainstream" value={sundayRows.reduce((s,r) => s+(r.ms||0), 0)} color={T.sage} />}
             </div>
           </div>
-          <div style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 6, padding: dens ? 16 : 22 }}>
-            <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3, marginBottom: 6 }}>Midweek · all campuses</div>
+          <div onClick={() => setBreakdown('Midweek')} title="Click to see every Midweek entry for this week" style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 6, padding: dens ? 16 : 22, cursor: 'pointer' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+              <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3 }}>Midweek · all campuses</div>
+              <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: '.12em', textTransform: 'uppercase', color: T.wine }}>View entries ›</div>
+            </div>
             <div style={{ fontFamily: T.display, fontSize: dens ? 40 : 52, fontWeight: 500, lineHeight: .9, letterSpacing: '-0.025em', fontVariantNumeric: 'tabular-nums', marginBottom: 12 }}>{window.fmtFull(midweekTotal)}</div>
             <div style={{ display: 'flex', gap: 18, fontFamily: T.sans, fontSize: 12.5, color: T.ink2, paddingTop: 10, borderTop: `1px solid ${T.ruleLight}` }}>
               <Bullet T={T} label="Main Service" value={midweekRows.reduce((s,r) => s+(r.main||0), 0)} color={T.wine} />
@@ -1649,6 +1667,12 @@ function OverviewTab({ T, dens, latest, prev, lastYearTotal, wow, yoy, k, latest
             </div>
           </div>
         </div>
+      )}
+
+      {breakdown && (
+        <BreakdownModal T={T} dens={dens} bucket={breakdown}
+          rows={breakdown === 'Sunday' ? sundayRows : midweekRows}
+          weekOf={latest.weekOf} onClose={() => setBreakdown(null)} />
       )}
 
       {(() => {
@@ -2381,6 +2405,65 @@ function Drawer({ record, onClose, theme, onDataChange }) {
 
 }
 
+// Popup: every Sunday/Midweek entry that makes up the overview card, for the selected week.
+function BreakdownModal({ T, dens, bucket, rows, weekOf, onClose }) {
+  const sorted = [...(rows || [])].sort((a, b) => (b.total || 0) - (a.total || 0));
+  const hasMs = sorted.some(r => (r.ms || 0) > 0);
+  const sum = (k) => sorted.reduce((s, r) => s + (r[k] || 0), 0);
+  const cols = ['Campus', 'Service', 'Main', 'FaithKids', ...(hasMs ? ['Mainstream'] : []), 'Total'];
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(35,24,17,.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, animation: 'bdFadeIn .18s ease' }}>
+      <style>{`@keyframes bdFadeIn { from { opacity: 0; } to { opacity: 1; } }`}</style>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(720px, 100%)', maxHeight: '85vh', overflow: 'auto', background: T.paper, border: `1px solid ${T.rule}`, borderRadius: 8, padding: 32, boxShadow: '0 24px 60px rgba(0,0,0,.3)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+          <div>
+            <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: '.18em', color: T.ink3, textTransform: 'uppercase' }}>{bucket} breakdown · all campuses</div>
+            <h3 style={{ fontFamily: T.display, fontSize: 30, margin: '8px 0 0', fontWeight: 500, letterSpacing: '-0.01em' }}>{window.fmtFull(sum('total'))}<span style={{ fontStyle: 'italic', fontSize: 15, color: T.ink2, fontWeight: 400 }}> total</span></h3>
+            <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 15, color: T.ink2, marginTop: 4 }}>Week of {weekOf} · {sorted.length} {sorted.length === 1 ? 'entry' : 'entries'}</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'transparent', border: `1px solid ${T.rule}`, width: 32, height: 32, borderRadius: '50%', cursor: 'pointer', color: T.ink2, fontSize: 14, flexShrink: 0 }}>✕</button>
+        </div>
+        {sorted.length === 0 ? (
+          <div style={{ fontFamily: T.sans, fontSize: 13, color: T.ink3, padding: '24px 0' }}>No {bucket.toLowerCase()} entries recorded for this week.</div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: T.sans, fontSize: 12.5 }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${T.rule}` }}>
+                {cols.map((h, i) =>
+                  <th key={i} style={{ textAlign: i < 2 ? 'left' : 'right', padding: '0 0 9px', fontFamily: T.mono, fontSize: 9.5, letterSpacing: '.16em', textTransform: 'uppercase', color: T.ink3, fontWeight: 400 }}>{h}</th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((r, i) =>
+                <tr key={i} style={{ borderBottom: `1px solid ${T.ruleLight}` }}>
+                  <td style={{ padding: '9px 0', color: T.ink }}>{(window.CAMPUS_LABEL && window.CAMPUS_LABEL[r.campus]) || r.campus}</td>
+                  <td style={{ padding: '9px 8px 9px 0', fontFamily: T.display, fontStyle: 'italic', color: T.ink2 }}>{window.serviceLabel(r)}</td>
+                  <td style={{ padding: '9px 0', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: T.ink2 }}>{r.main == null ? '—' : window.fmtFull(r.main)}</td>
+                  <td style={{ padding: '9px 0', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: T.ink2 }}>{r.fk == null ? '—' : window.fmtFull(r.fk)}</td>
+                  {hasMs && <td style={{ padding: '9px 0', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: T.ink2 }}>
+                    {r.ms == null ? '—' : window.fmtFull(r.ms)}
+                    {r.msMiddle != null && <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '.04em', color: T.ink3, marginTop: 2 }}>High {window.fmtFull(r.msHigh || 0)} · Mid {window.fmtFull(r.msMiddle)}</div>}
+                  </td>}
+                  <td style={{ padding: '9px 0', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: T.ink }}>{window.fmtFull(r.total)}</td>
+                </tr>
+              )}
+              <tr style={{ borderTop: `2px solid ${T.ink}`, fontWeight: 600 }}>
+                <td style={{ padding: '11px 0' }}>All campuses</td>
+                <td></td>
+                <td style={{ padding: '11px 0', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{window.fmtFull(sum('main'))}</td>
+                <td style={{ padding: '11px 0', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{window.fmtFull(sum('fk'))}</td>
+                {hasMs && <td style={{ padding: '11px 0', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{window.fmtFull(sum('ms'))}</td>}
+                <td style={{ padding: '11px 0', textAlign: 'right', fontFamily: T.display, fontSize: 17 }}>{window.fmtFull(sum('total'))}</td>
+              </tr>
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 window.MainView = MainView;
 window.M_THEME = M_THEME;
 
@@ -2520,7 +2603,7 @@ function MobileView({ onAddEntry, onDataChange, onEditRecord }) {
       <div ref={scrollRef}
         onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
         style={{ flex: 1, overflow: 'auto', WebkitOverflowScrolling: 'touch' }}>
-        {tab === 'overview' && <MOverview T={T} completed={completed} weekIdx={weekIdx} setWeekIdx={setWeekIdx} ALL={ALL} k={k} onOpenCampus={(c) => setSheet({ kind: 'campus', payload: c })} onOpenService={(r) => setSheet({ kind: 'service', payload: r })} />}
+        {tab === 'overview' && <MOverview T={T} completed={completed} weekIdx={weekIdx} setWeekIdx={setWeekIdx} ALL={ALL} k={k} onOpenCampus={(c) => setSheet({ kind: 'campus', payload: c })} onOpenService={(r) => setSheet({ kind: 'service', payload: r })} onOpenBucket={(payload) => setSheet({ kind: 'bucket', payload })} />}
         {tab === 'trends' && <MTrends T={T} k={k} />}
         {tab === 'campuses' && <MCampuses T={T} ALL={ALL} TODAY={TODAY} onOpenCampus={(c) => setSheet({ kind: 'campus', payload: c })} />}
         {tab === 'events' && <window.MEventsTab T={T} onDataChange={onDataChange} />}
@@ -2531,6 +2614,7 @@ function MobileView({ onAddEntry, onDataChange, onEditRecord }) {
 
       {sheet?.kind === 'service' && <ServiceSheet T={T} record={sheet.payload} onClose={() => setSheet(null)} onDataChange={onDataChange} />}
       {sheet?.kind === 'campus' && <CampusSheet T={T} campus={sheet.payload} onClose={() => setSheet(null)} weekOf={completed[weekIdx]?.weekOf} />}
+      {sheet?.kind === 'bucket' && <BucketSheet T={T} bucket={sheet.payload.bucket} rows={sheet.payload.rows} weekOf={sheet.payload.weekOf} onClose={() => setSheet(null)} />}
 
       {toast && (
         <div style={{
@@ -2630,7 +2714,7 @@ function MobileTabs({ T, tab, onChange }) {
 }
 
 // ============= OVERVIEW =============
-function MOverview({ T, completed, weekIdx, setWeekIdx, ALL, k, onOpenCampus, onOpenService }) {
+function MOverview({ T, completed, weekIdx, setWeekIdx, ALL, k, onOpenCampus, onOpenService, onOpenBucket }) {
   const w = completed[weekIdx];
   if (!w) return <div style={{ padding: 30, color: T.ink3 }}>No completed weeks of data.</div>;
   const prev = weekIdx > 0 ? completed[weekIdx - 1] : null;
@@ -2655,8 +2739,8 @@ function MOverview({ T, completed, weekIdx, setWeekIdx, ALL, k, onOpenCampus, on
   }).filter((c) => c.cur > 0).sort((a, b) => b.cur - a.cur);
 
   const last8 = completed.slice(Math.max(0, weekIdx - 7), weekIdx + 1);
-  const sundayRows = wkRows.filter(r => window.bucketOf(r) === 'Sunday');
-  const midweekRows = wkRows.filter(r => window.bucketOf(r) === 'Midweek');
+  const sundayRows = wkRows.filter(r => window.bucketOf(r) === 'Sunday' && !r.excludeFromWeekly);
+  const midweekRows = wkRows.filter(r => window.bucketOf(r) === 'Midweek' && !r.excludeFromWeekly);
   const sundayTotal = sundayRows.reduce((s,r) => s+(r.total||0), 0);
   const midweekTotal = midweekRows.reduce((s,r) => s+(r.total||0), 0);
 
@@ -2700,13 +2784,19 @@ function MOverview({ T, completed, weekIdx, setWeekIdx, ALL, k, onOpenCampus, on
 
       {(sundayTotal > 0 || midweekTotal > 0) && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
-          <div style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 8, padding: '14px 16px' }}>
-            <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '.18em', textTransform: 'uppercase', color: T.ink3, marginBottom: 4 }}>Sunday</div>
+          <div onClick={() => onOpenBucket({ bucket: 'Sunday', rows: sundayRows, weekOf: w.weekOf })} style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 8, padding: '14px 16px', cursor: 'pointer' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+              <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '.18em', textTransform: 'uppercase', color: T.ink3 }}>Sunday</div>
+              <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: '.1em', textTransform: 'uppercase', color: T.wine }}>Details ›</div>
+            </div>
             <div style={{ fontFamily: T.display, fontSize: 30, fontWeight: 500, lineHeight: .95, fontVariantNumeric: 'tabular-nums', marginBottom: 8 }}>{window.fmtFull(sundayTotal)}</div>
-            <div style={{ fontFamily: T.sans, fontSize: 11, color: T.ink2 }}>{window.fmtFull(sundayRows.reduce((s,r)=>s+(r.main||0),0))} main · {window.fmtFull(sundayRows.reduce((s,r)=>s+(r.fk||0),0))} kids</div>
+            <div style={{ fontFamily: T.sans, fontSize: 11, color: T.ink2 }}>{window.fmtFull(sundayRows.reduce((s,r)=>s+(r.main||0),0))} main · {window.fmtFull(sundayRows.reduce((s,r)=>s+(r.fk||0),0))} kids{sundayRows.reduce((s,r)=>s+(r.ms||0),0) > 0 ? ` · ${window.fmtFull(sundayRows.reduce((s,r)=>s+(r.ms||0),0))} ms` : ''}</div>
           </div>
-          <div style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 8, padding: '14px 16px' }}>
-            <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '.18em', textTransform: 'uppercase', color: T.ink3, marginBottom: 4 }}>Midweek</div>
+          <div onClick={() => onOpenBucket({ bucket: 'Midweek', rows: midweekRows, weekOf: w.weekOf })} style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 8, padding: '14px 16px', cursor: 'pointer' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+              <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '.18em', textTransform: 'uppercase', color: T.ink3 }}>Midweek</div>
+              <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: '.1em', textTransform: 'uppercase', color: T.wine }}>Details ›</div>
+            </div>
             <div style={{ fontFamily: T.display, fontSize: 30, fontWeight: 500, lineHeight: .95, fontVariantNumeric: 'tabular-nums', marginBottom: 8 }}>{window.fmtFull(midweekTotal)}</div>
             <div style={{ fontFamily: T.sans, fontSize: 11, color: T.ink2 }}>{window.fmtFull(midweekRows.reduce((s,r)=>s+(r.main||0),0))} main · {window.fmtFull(midweekRows.reduce((s,r)=>s+(r.ms||0),0))} ms</div>
           </div>
@@ -3324,6 +3414,42 @@ function Sheet({ T, onClose, title, eyebrow, children }) {
   );
 }
 
+// Popup: every Sunday/Midweek entry that makes up the overview card, for the selected week.
+function BucketSheet({ T, bucket, rows, weekOf, onClose }) {
+  const sorted = [...(rows || [])].sort((a, b) => (b.total || 0) - (a.total || 0));
+  const hasMs = sorted.some(r => (r.ms || 0) > 0);
+  const sum = (k) => sorted.reduce((s, r) => s + (r[k] || 0), 0);
+  return (
+    <Sheet T={T} onClose={onClose} eyebrow={`${bucket} breakdown · all campuses`} title={`${window.fmtFull(sum('total'))} total`}>
+      <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 13, color: T.ink2, marginBottom: 14 }}>Week of {weekOf} · {sorted.length} {sorted.length === 1 ? 'entry' : 'entries'}</div>
+      {sorted.length === 0 ? (
+        <div style={{ fontFamily: T.sans, fontSize: 13, color: T.ink3, padding: '8px 0' }}>No {bucket.toLowerCase()} entries recorded for this week.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {sorted.map((r, i) => (
+            <div key={i} style={{ border: `1px solid ${T.rule}`, background: T.card, borderRadius: 8, padding: '11px 13px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontFamily: T.sans, fontSize: 13, fontWeight: 600, color: T.ink }}>{(window.CAMPUS_LABEL && window.CAMPUS_LABEL[r.campus]) || r.campus}</div>
+                  <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 12.5, color: T.ink2 }}>{window.serviceLabel(r)}</div>
+                </div>
+                <div style={{ fontFamily: T.display, fontSize: 22, fontWeight: 500, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{window.fmtFull(r.total)}</div>
+              </div>
+              <div style={{ fontFamily: T.sans, fontSize: 11, color: T.ink3, marginTop: 6 }}>
+                {r.main == null ? '—' : window.fmtFull(r.main)} main · {r.fk == null ? '—' : window.fmtFull(r.fk)} kids{hasMs ? ` · ${r.ms == null ? '—' : window.fmtFull(r.ms)} ms` : ''}{r.msMiddle != null ? ` (High ${window.fmtFull(r.msHigh || 0)} · Mid ${window.fmtFull(r.msMiddle)})` : ''}
+              </div>
+            </div>
+          ))}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderTop: `2px solid ${T.ink}`, marginTop: 4, paddingTop: 11 }}>
+            <div style={{ fontFamily: T.sans, fontSize: 13, fontWeight: 600 }}>All campuses</div>
+            <div style={{ fontFamily: T.display, fontSize: 20, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{window.fmtFull(sum('total'))}</div>
+          </div>
+        </div>
+      )}
+    </Sheet>
+  );
+}
+
 function ServiceSheet({ T, record, onClose, onDataChange }) {
   const fullName = window.CAMPUS_LABEL?.[record.campus] || record.campus;
   const series = window.ATTENDANCE.filter((r) => r.campus === record.campus && r.cat === record.cat).sort((a, b) => a.date < b.date ? -1 : 1).slice(-12);
@@ -3451,8 +3577,8 @@ function DataEntryModal({ onClose, onSaved, editEntry }) {
         cat: editEntry.cat || window.SERVICE_CATS[0],
         main: editEntry.main != null ? String(editEntry.main) : '',
         fk: editEntry.fk != null ? String(editEntry.fk) : '',
-        ms: editEntry.ms != null ? String(editEntry.ms) : '',
-        msM: editEntry.msM != null ? String(editEntry.msM) : '',
+        ms: editEntry.msHigh != null ? String(editEntry.msHigh) : (editEntry.ms != null ? String(editEntry.ms) : ''),
+        msM: editEntry.msMiddle != null ? String(editEntry.msMiddle) : (editEntry.msM != null ? String(editEntry.msM) : ''),
         eventId: editEntry.eventId || null,
         excludeFromWeekly: !!editEntry.excludeFromWeekly,
       };
