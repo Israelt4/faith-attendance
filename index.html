@@ -1596,6 +1596,35 @@ function OverviewTab({ T, dens, latest, prev, lastYearTotal, wow, yoy, k, latest
   const sundayTotal = sundayRows.reduce((s,r) => s+(r.total||0), 0);
   const midweekTotal = midweekRows.reduce((s,r) => s+(r.total||0), 0);
   const [breakdown, setBreakdown] = React.useState(null); // 'Sunday' | 'Midweek' | null
+
+  // Per-week Sunday/Midweek totals (excludeFromWeekly already removed), used for the
+  // Sunday/Midweek "vs last week" and "YTD weekly avg" comparisons below.
+  const bucketWeekly = (() => {
+    const m = {};
+    (window.ATTENDANCE || []).forEach(r => {
+      if (r.excludeFromWeekly) return;
+      const b = window.bucketOf(r);
+      if (b !== 'Sunday' && b !== 'Midweek') return;
+      if (!m[r.weekOf]) m[r.weekOf] = { Sunday: 0, Midweek: 0 };
+      m[r.weekOf][b] += r.total || 0;
+    });
+    return m;
+  })();
+  const bw = (weekOf, bucket) => (bucketWeekly[weekOf] && bucketWeekly[weekOf][bucket]) || 0;
+  // vs last week
+  const sundayPrev = prev ? bw(prev.weekOf, 'Sunday') : null;
+  const midweekPrev = prev ? bw(prev.weekOf, 'Midweek') : null;
+  const sundayWow = sundayPrev ? (sundayTotal - sundayPrev) / sundayPrev * 100 : null;
+  const midweekWow = midweekPrev ? (midweekTotal - midweekPrev) / midweekPrev * 100 : null;
+  // YTD weekly avg (same week sets as the network calc above)
+  const _bucketAvg = (weeks, bucket) => weeks.length ? weeks.reduce((s, w) => s + bw(w.weekOf, bucket), 0) / weeks.length : null;
+  const sundayYtdAvg = _bucketAvg(_cWks, 'Sunday');
+  const sundayLyYtdAvg = _bucketAvg(_pWks, 'Sunday');
+  const sundayYtdDelta = sundayYtdAvg && sundayLyYtdAvg ? (sundayYtdAvg - sundayLyYtdAvg) / sundayLyYtdAvg * 100 : null;
+  const midweekYtdAvg = _bucketAvg(_cWks, 'Midweek');
+  const midweekLyYtdAvg = _bucketAvg(_pWks, 'Midweek');
+  const midweekYtdDelta = midweekYtdAvg && midweekLyYtdAvg ? (midweekYtdAvg - midweekLyYtdAvg) / midweekLyYtdAvg * 100 : null;
+
   return (
     <div style={{ padding: `${dens ? 20 : 28}px ${dens ? 20 : 28}px` }}>
       {/* Week navigation */}
@@ -1641,33 +1670,55 @@ function OverviewTab({ T, dens, latest, prev, lastYearTotal, wow, yoy, k, latest
         curN={ytdAvg ? Math.round(ytdAvg) : null} prevN={lyYtdAvg ? Math.round(lyYtdAvg) : null} prevLabel={lyYtdAvg ? `${_ytdYr - 1} avg · ${_ytdN} wks` : 'No prior year data'} />
       </div>
 
-      {/* Sunday / Midweek split */}
-      {(sundayTotal > 0 || midweekTotal > 0) && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: dens ? 16 : 20, marginBottom: dens ? 20 : 28 }}>
-          <div onClick={() => setBreakdown('Sunday')} title="Click to see every Sunday entry for this week" style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 6, padding: dens ? 16 : 22, cursor: 'pointer' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-              <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3 }}>Sunday · all campuses</div>
+      {/* Sunday row — mirrors the network hero (total · vs last week · YTD weekly avg) */}
+      {sundayTotal > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: dens ? 16 : 20, marginBottom: dens ? 16 : 20 }}>
+          <div onClick={() => setBreakdown('Sunday')} title="Click to see every Sunday entry for this week" style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 6, padding: dens ? 22 : 30, cursor: 'pointer' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+              <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3 }}>Sunday · this week</div>
               <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: '.12em', textTransform: 'uppercase', color: T.wine }}>View entries ›</div>
             </div>
-            <div style={{ fontFamily: T.display, fontSize: dens ? 40 : 52, fontWeight: 500, lineHeight: .9, letterSpacing: '-0.025em', fontVariantNumeric: 'tabular-nums', marginBottom: 12 }}>{window.fmtFull(sundayTotal)}</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginBottom: 14 }}>
+              <div style={{ fontFamily: T.display, fontSize: dens ? 56 : 72, fontWeight: 500, lineHeight: .9, letterSpacing: '-0.025em', fontVariantNumeric: 'tabular-nums' }}>{window.fmtFull(sundayTotal)}</div>
+              <div style={{ fontFamily: T.display, fontSize: 15, fontStyle: 'italic', color: T.ink2 }}>across the network</div>
+            </div>
             <div style={{ display: 'flex', gap: 18, fontFamily: T.sans, fontSize: 12.5, color: T.ink2, paddingTop: 10, borderTop: `1px solid ${T.ruleLight}` }}>
               <Bullet T={T} label="Main Service" value={sundayRows.reduce((s,r) => s+(r.main||0), 0)} color={T.wine} />
               <Bullet T={T} label="FaithKids" value={sundayRows.reduce((s,r) => s+(r.fk||0), 0)} color={T.clay} />
               {sundayRows.reduce((s,r) => s+(r.ms||0), 0) > 0 && <Bullet T={T} label="Mainstream" value={sundayRows.reduce((s,r) => s+(r.ms||0), 0)} color={T.sage} />}
             </div>
           </div>
-          <div onClick={() => setBreakdown('Midweek')} title="Click to see every Midweek entry for this week" style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 6, padding: dens ? 16 : 22, cursor: 'pointer' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-              <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3 }}>Midweek · all campuses</div>
+          <DeltaCard T={T} dens={dens} title="Sunday vs last week" delta={sundayWow}
+            curN={sundayTotal} prevN={sundayPrev} prevLabel={prev ? `Week of ${prev.weekOf}` : '—'} />
+          <DeltaCard T={T} dens={dens} title="Sunday YTD weekly avg" delta={sundayYtdDelta}
+            curN={sundayYtdAvg ? Math.round(sundayYtdAvg) : null} prevN={sundayLyYtdAvg ? Math.round(sundayLyYtdAvg) : null}
+            prevLabel={sundayLyYtdAvg ? `${_ytdYr - 1} avg · ${_ytdN} wks` : 'No prior year data'} />
+        </div>
+      )}
+
+      {/* Midweek row — mirrors the network hero */}
+      {midweekTotal > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: dens ? 16 : 20, marginBottom: dens ? 20 : 28 }}>
+          <div onClick={() => setBreakdown('Midweek')} title="Click to see every Midweek entry for this week" style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 6, padding: dens ? 22 : 30, cursor: 'pointer' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+              <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3 }}>Midweek · this week</div>
               <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: '.12em', textTransform: 'uppercase', color: T.wine }}>View entries ›</div>
             </div>
-            <div style={{ fontFamily: T.display, fontSize: dens ? 40 : 52, fontWeight: 500, lineHeight: .9, letterSpacing: '-0.025em', fontVariantNumeric: 'tabular-nums', marginBottom: 12 }}>{window.fmtFull(midweekTotal)}</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginBottom: 14 }}>
+              <div style={{ fontFamily: T.display, fontSize: dens ? 56 : 72, fontWeight: 500, lineHeight: .9, letterSpacing: '-0.025em', fontVariantNumeric: 'tabular-nums' }}>{window.fmtFull(midweekTotal)}</div>
+              <div style={{ fontFamily: T.display, fontSize: 15, fontStyle: 'italic', color: T.ink2 }}>across the network</div>
+            </div>
             <div style={{ display: 'flex', gap: 18, fontFamily: T.sans, fontSize: 12.5, color: T.ink2, paddingTop: 10, borderTop: `1px solid ${T.ruleLight}` }}>
               <Bullet T={T} label="Main Service" value={midweekRows.reduce((s,r) => s+(r.main||0), 0)} color={T.wine} />
               <Bullet T={T} label="FaithKids" value={midweekRows.reduce((s,r) => s+(r.fk||0), 0)} color={T.clay} />
               <Bullet T={T} label="Mainstream" value={midweekRows.reduce((s,r) => s+(r.ms||0), 0)} color={T.sage} />
             </div>
           </div>
+          <DeltaCard T={T} dens={dens} title="Midweek vs last week" delta={midweekWow}
+            curN={midweekTotal} prevN={midweekPrev} prevLabel={prev ? `Week of ${prev.weekOf}` : '—'} />
+          <DeltaCard T={T} dens={dens} title="Midweek YTD weekly avg" delta={midweekYtdDelta}
+            curN={midweekYtdAvg ? Math.round(midweekYtdAvg) : null} prevN={midweekLyYtdAvg ? Math.round(midweekLyYtdAvg) : null}
+            prevLabel={midweekLyYtdAvg ? `${_ytdYr - 1} avg · ${_ytdN} wks` : 'No prior year data'} />
         </div>
       )}
 
@@ -2746,6 +2797,31 @@ function MOverview({ T, completed, weekIdx, setWeekIdx, ALL, k, onOpenCampus, on
   const sundayTotal = sundayRows.reduce((s,r) => s+(r.total||0), 0);
   const midweekTotal = midweekRows.reduce((s,r) => s+(r.total||0), 0);
 
+  // Per-week Sunday/Midweek totals for the bucket "vs last week" + "YTD avg" comparisons.
+  const mBucketWeekly = (() => {
+    const m = {};
+    (ALL || []).forEach(r => {
+      if (r.excludeFromWeekly) return;
+      const b = window.bucketOf(r);
+      if (b !== 'Sunday' && b !== 'Midweek') return;
+      if (!m[r.weekOf]) m[r.weekOf] = { Sunday: 0, Midweek: 0 };
+      m[r.weekOf][b] += r.total || 0;
+    });
+    return m;
+  })();
+  const mbw = (weekOf, bucket) => (mBucketWeekly[weekOf] && mBucketWeekly[weekOf][bucket]) || 0;
+  const sundayPrev = prev ? mbw(prev.weekOf, 'Sunday') : null;
+  const midweekPrev = prev ? mbw(prev.weekOf, 'Midweek') : null;
+  const sundayWow = sundayPrev ? (sundayTotal - sundayPrev) / sundayPrev * 100 : null;
+  const midweekWow = midweekPrev ? (midweekTotal - midweekPrev) / midweekPrev * 100 : null;
+  const _mBucketAvg = (weeks, bucket) => weeks.length ? weeks.reduce((s, wk) => s + mbw(wk.weekOf, bucket), 0) / weeks.length : null;
+  const sundayYtdAvg = _mBucketAvg(_cWks, 'Sunday');
+  const sundayLyYtdAvg = _mBucketAvg(_pWks, 'Sunday');
+  const sundayYtdDelta = sundayYtdAvg && sundayLyYtdAvg ? (sundayYtdAvg - sundayLyYtdAvg) / sundayLyYtdAvg * 100 : null;
+  const midweekYtdAvg = _mBucketAvg(_cWks, 'Midweek');
+  const midweekLyYtdAvg = _mBucketAvg(_pWks, 'Midweek');
+  const midweekYtdDelta = midweekYtdAvg && midweekLyYtdAvg ? (midweekYtdAvg - midweekLyYtdAvg) / midweekLyYtdAvg * 100 : null;
+
   return (
     <div style={{ padding: '14px 16px 24px' }}>
       {/* Week pager */}
@@ -2784,24 +2860,53 @@ function MOverview({ T, completed, weekIdx, setWeekIdx, ALL, k, onOpenCampus, on
         <MDelta T={T} label="YTD avg vs last yr" delta={ytdDelta} cur={ytdAvg ? Math.round(ytdAvg) : w.total} prevN={lyYtdAvg ? Math.round(lyYtdAvg) : null} />
       </div>
 
-      {(sundayTotal > 0 || midweekTotal > 0) && (
+      {/* Sunday — mirrors the network total + deltas */}
+      {sundayTotal > 0 && (
+        <div onClick={() => onOpenBucket({ bucket: 'Sunday', rows: sundayRows, weekOf: w.weekOf })} style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 8, padding: 18, marginBottom: 10, cursor: 'pointer' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+            <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3 }}>Sunday · this week</div>
+            <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: '.1em', textTransform: 'uppercase', color: T.wine }}>Details ›</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12 }}>
+            <div style={{ fontFamily: T.display, fontSize: 44, fontWeight: 500, lineHeight: .9, letterSpacing: '-0.025em', fontVariantNumeric: 'tabular-nums' }}>{window.fmtFull(sundayTotal)}</div>
+            <div style={{ fontFamily: T.display, fontSize: 12, fontStyle: 'italic', color: T.ink2 }}>attended</div>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, fontFamily: T.sans, fontSize: 12, color: T.ink2, paddingTop: 12, borderTop: `1px solid ${T.ruleLight}` }}>
+            <MBullet T={T} label="Main" value={sundayRows.reduce((s,r)=>s+(r.main||0),0)} color={T.wine} />
+            <MBullet T={T} label="FaithKids" value={sundayRows.reduce((s,r)=>s+(r.fk||0),0)} color={T.clay} />
+            {sundayRows.reduce((s,r)=>s+(r.ms||0),0) > 0 && <MBullet T={T} label="Mainstream" value={sundayRows.reduce((s,r)=>s+(r.ms||0),0)} color={T.sage} />}
+          </div>
+        </div>
+      )}
+      {sundayTotal > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
-          <div onClick={() => onOpenBucket({ bucket: 'Sunday', rows: sundayRows, weekOf: w.weekOf })} style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 8, padding: '14px 16px', cursor: 'pointer' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-              <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '.18em', textTransform: 'uppercase', color: T.ink3 }}>Sunday</div>
-              <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: '.1em', textTransform: 'uppercase', color: T.wine }}>Details ›</div>
-            </div>
-            <div style={{ fontFamily: T.display, fontSize: 30, fontWeight: 500, lineHeight: .95, fontVariantNumeric: 'tabular-nums', marginBottom: 8 }}>{window.fmtFull(sundayTotal)}</div>
-            <div style={{ fontFamily: T.sans, fontSize: 11, color: T.ink2 }}>{window.fmtFull(sundayRows.reduce((s,r)=>s+(r.main||0),0))} main · {window.fmtFull(sundayRows.reduce((s,r)=>s+(r.fk||0),0))} kids{sundayRows.reduce((s,r)=>s+(r.ms||0),0) > 0 ? ` · ${window.fmtFull(sundayRows.reduce((s,r)=>s+(r.ms||0),0))} ms` : ''}</div>
+          <MDelta T={T} label="Sunday vs last week" delta={sundayWow} cur={sundayTotal} prevN={sundayPrev} />
+          <MDelta T={T} label="Sunday YTD vs last yr" delta={sundayYtdDelta} cur={sundayYtdAvg ? Math.round(sundayYtdAvg) : sundayTotal} prevN={sundayLyYtdAvg ? Math.round(sundayLyYtdAvg) : null} />
+        </div>
+      )}
+
+      {/* Midweek — mirrors the network total + deltas */}
+      {midweekTotal > 0 && (
+        <div onClick={() => onOpenBucket({ bucket: 'Midweek', rows: midweekRows, weekOf: w.weekOf })} style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 8, padding: 18, marginBottom: 10, cursor: 'pointer' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+            <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: '.2em', textTransform: 'uppercase', color: T.ink3 }}>Midweek · this week</div>
+            <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: '.1em', textTransform: 'uppercase', color: T.wine }}>Details ›</div>
           </div>
-          <div onClick={() => onOpenBucket({ bucket: 'Midweek', rows: midweekRows, weekOf: w.weekOf })} style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 8, padding: '14px 16px', cursor: 'pointer' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-              <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '.18em', textTransform: 'uppercase', color: T.ink3 }}>Midweek</div>
-              <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: '.1em', textTransform: 'uppercase', color: T.wine }}>Details ›</div>
-            </div>
-            <div style={{ fontFamily: T.display, fontSize: 30, fontWeight: 500, lineHeight: .95, fontVariantNumeric: 'tabular-nums', marginBottom: 8 }}>{window.fmtFull(midweekTotal)}</div>
-            <div style={{ fontFamily: T.sans, fontSize: 11, color: T.ink2 }}>{window.fmtFull(midweekRows.reduce((s,r)=>s+(r.main||0),0))} main · {window.fmtFull(midweekRows.reduce((s,r)=>s+(r.ms||0),0))} ms</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12 }}>
+            <div style={{ fontFamily: T.display, fontSize: 44, fontWeight: 500, lineHeight: .9, letterSpacing: '-0.025em', fontVariantNumeric: 'tabular-nums' }}>{window.fmtFull(midweekTotal)}</div>
+            <div style={{ fontFamily: T.display, fontSize: 12, fontStyle: 'italic', color: T.ink2 }}>attended</div>
           </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, fontFamily: T.sans, fontSize: 12, color: T.ink2, paddingTop: 12, borderTop: `1px solid ${T.ruleLight}` }}>
+            <MBullet T={T} label="Main" value={midweekRows.reduce((s,r)=>s+(r.main||0),0)} color={T.wine} />
+            <MBullet T={T} label="FaithKids" value={midweekRows.reduce((s,r)=>s+(r.fk||0),0)} color={T.clay} />
+            <MBullet T={T} label="Mainstream" value={midweekRows.reduce((s,r)=>s+(r.ms||0),0)} color={T.sage} />
+          </div>
+        </div>
+      )}
+      {midweekTotal > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+          <MDelta T={T} label="Midweek vs last week" delta={midweekWow} cur={midweekTotal} prevN={midweekPrev} />
+          <MDelta T={T} label="Midweek YTD vs last yr" delta={midweekYtdDelta} cur={midweekYtdAvg ? Math.round(midweekYtdAvg) : midweekTotal} prevN={midweekLyYtdAvg ? Math.round(midweekLyYtdAvg) : null} />
         </div>
       )}
 
