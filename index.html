@@ -365,6 +365,41 @@ window.publishEntries = async function() {
   return { ok: true, count: newEntries.length };
 };
 
+// Delete a single record. Removes it from local (unpublished) storage, and — if it was
+// already published — rewrites manual-entries.json without it (needs the browser token).
+window.deleteEntry = async function(record) {
+  var stored = window.loadStoredEntries();
+  var kept = stored.filter(function(r) { return !window.sameEntry(r, record); });
+  var removedLocal = kept.length !== stored.length;
+  if (removedLocal) localStorage.setItem('fc_attendance_entries', JSON.stringify(kept));
+
+  var published = window.PUBLISHED_ENTRIES || [];
+  var inPublished = published.some(function(e) { return window.sameEntry(e, record); });
+  if (inPublished) {
+    var TOKEN = (localStorage.getItem('fc_gh_token') || '').trim();
+    if (!TOKEN) { TOKEN = (window.prompt('Paste a GitHub token to delete a published entry (stored only in this browser):') || '').trim(); if (TOKEN) localStorage.setItem('fc_gh_token', TOKEN); }
+    if (!TOKEN) return { ok: false, msg: 'Deleting a published entry needs a GitHub token.' };
+    var REPO = 'Israelt4/faith-attendance';
+    var FILE = 'manual-entries.json';
+    var API = 'https://api.github.com/repos/' + REPO + '/contents/' + FILE;
+    var remaining = published.filter(function(e) { return !window.sameEntry(e, record); });
+    var sha = null;
+    try { var gr = await fetch(API, { headers: { 'Authorization': 'Bearer ' + TOKEN, 'Accept': 'application/vnd.github+json' } }); if (gr.ok) sha = (await gr.json()).sha; } catch(e) {}
+    var body = {
+      message: 'Delete attendance ' + (record.date || '') + ' ' + (record.campus || '') + ' ' + (record.cat || ''),
+      content: btoa(unescape(encodeURIComponent(JSON.stringify(remaining, null, 2)))),
+    };
+    if (sha) body.sha = sha;
+    var pr = await fetch(API, { method: 'PUT', headers: { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json', 'Accept': 'application/vnd.github+json' }, body: JSON.stringify(body) });
+    if (!pr.ok) { var err = await pr.json().catch(function() { return {}; }); return { ok: false, msg: err.message || ('GitHub error ' + pr.status) }; }
+    window.PUBLISHED_ENTRIES = remaining;
+  }
+
+  window.mergeAttendance();
+  window.dispatchEvent(new CustomEvent('fc-published'));
+  return { ok: true, local: removedLocal, published: inPublished };
+};
+
 function PublishButton({ T, mobile }) {
   const [status, setStatus] = React.useState('idle');
   const storedCount = window.loadStoredEntries().length;
@@ -1438,7 +1473,7 @@ const M_THEME = {
   mono: '"JetBrains Mono", "SF Mono", monospace'
 };
 
-function MainView({ density = 'comfortable', onDataChange, onEditRecord }) {
+function MainView({ density = 'comfortable', onDataChange, onEditRecord, onDeleteRecord }) {
   const T = M_THEME;
   const ALL = window.ATTENDANCE;
   const TODAY = new Date();
@@ -1490,7 +1525,7 @@ function MainView({ density = 'comfortable', onDataChange, onEditRecord }) {
         {tab === 'trends' && <TrendsTab T={T} dens={dens} k={k} />}
         {tab === 'campuses' && <CampusesTab T={T} dens={dens} />}
         {tab === 'events' && <window.EventsTab T={T} dens={dens} onDataChange={onDataChange} />}
-        {tab === 'records' && <RecordsTab T={T} dens={dens} onOpenRecord={setDrawer} onEditRecord={onEditRecord} />}
+        {tab === 'records' && <RecordsTab T={T} dens={dens} onOpenRecord={setDrawer} onEditRecord={onEditRecord} onDeleteRecord={onDeleteRecord} />}
       </div>
 
       {drawer && <Drawer record={drawer} onClose={() => setDrawer(null)} theme={T} onDataChange={onDataChange} />}
@@ -2252,7 +2287,7 @@ function MiniDelta({ T, label, delta, abs }) {
 
 // ============= RECORDS =============
 
-function RecordsTab({ T, dens, onOpenRecord, onEditRecord }) {
+function RecordsTab({ T, dens, onOpenRecord, onEditRecord, onDeleteRecord }) {
   const ALL = window.ATTENDANCE;
   const SERVICE_CATS_FILTERED = window.SERVICE_CATS.filter(c => c !== 'Special Event');
   const events = window.loadEventRegistry();
@@ -2388,6 +2423,7 @@ function RecordsTab({ T, dens, onOpenRecord, onEditRecord }) {
                 <td style={{ padding: `${dens ? 6 : 9}px 12px`, textAlign: 'right', fontFamily: T.display, fontSize: 15, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{window.fmtFull(r.total)}</td>
                 <td style={{ padding: `${dens ? 6 : 9}px 8px`, textAlign: 'center' }}>
                   {onEditRecord && <button onClick={(e) => { e.stopPropagation(); onEditRecord(r); }} title="Edit" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: T.ink3, fontSize: 14, padding: '2px 4px', lineHeight: 1 }}>✎</button>}
+                  {onDeleteRecord && r.isManual && <button onClick={(e) => { e.stopPropagation(); onDeleteRecord(r); }} title="Delete entry" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: T.ink3, padding: '2px 4px', lineHeight: 1, marginLeft: 2, verticalAlign: 'middle' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>}
                 </td>
               </tr>
             )}
@@ -2571,7 +2607,7 @@ const MM_THEME = {
   mono: '"JetBrains Mono", "SF Mono", monospace'
 };
 
-function MobileView({ onAddEntry, onDataChange, onEditRecord }) {
+function MobileView({ onAddEntry, onDataChange, onEditRecord, onDeleteRecord }) {
   const T = MM_THEME;
   const ALL = window.ATTENDANCE;
   const TODAY = new Date();
@@ -2684,7 +2720,7 @@ function MobileView({ onAddEntry, onDataChange, onEditRecord }) {
         {tab === 'trends' && <MTrends T={T} k={k} />}
         {tab === 'campuses' && <MCampuses T={T} ALL={ALL} TODAY={TODAY} onOpenCampus={(c) => setSheet({ kind: 'campus', payload: c })} />}
         {tab === 'events' && <window.MEventsTab T={T} onDataChange={onDataChange} />}
-        {tab === 'records' && <MRecords T={T} ALL={ALL} onOpenService={(r) => setSheet({ kind: 'service', payload: r })} onEditRecord={onEditRecord} />}
+        {tab === 'records' && <MRecords T={T} ALL={ALL} onOpenService={(r) => setSheet({ kind: 'service', payload: r })} onEditRecord={onEditRecord} onDeleteRecord={onDeleteRecord} />}
       </div>
 
       <MobileTabs T={T} tab={tab} onChange={setTab} />
@@ -3423,7 +3459,7 @@ function MiniStat({ T, label, value, tone, sub }) {
 }
 
 // ============= RECORDS =============
-function MRecords({ T, ALL, onOpenService, onEditRecord }) {
+function MRecords({ T, ALL, onOpenService, onEditRecord, onDeleteRecord }) {
   const SERVICE_CATS_FILTERED = window.SERVICE_CATS.filter(c => c !== 'Special Event');
   const events = window.loadEventRegistry();
   const [campuses, setCampuses] = React.useState([]);
@@ -3521,6 +3557,11 @@ function MRecords({ T, ALL, onOpenService, onEditRecord }) {
               border: `1px solid ${T.rule}`, borderRadius: 4, cursor: 'pointer',
               color: T.ink2, fontSize: 12, padding: '3px 7px', lineHeight: 1,
             }}>✎</button>}
+            {onDeleteRecord && r.isManual && <button onClick={(e) => { e.stopPropagation(); onDeleteRecord(r); }} title="Delete entry" style={{
+              position: 'absolute', top: 8, right: 72, background: 'rgba(247,241,230,0.9)',
+              border: `1px solid ${T.rule}`, borderRadius: 4, cursor: 'pointer',
+              color: T.ink2, padding: '3px 6px', lineHeight: 1, display: 'inline-flex', alignItems: 'center',
+            }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>}
           </div>
         ))}
       </div>
@@ -4516,6 +4557,16 @@ function App() {
   const handleEditRecord = (record) => setEditingRecord(record);
   const handleEditClose = () => setEditingRecord(null);
 
+  const handleDeleteRecord = async (record) => {
+    const isPublished = (window.PUBLISHED_ENTRIES || []).some(e => window.sameEntry(e, record));
+    let msg = 'Delete this entry?\n\n' + record.date + ' · ' + record.campus + ' · ' + window.serviceLabel(record) + ' · ' + window.fmtFull(record.total);
+    if (isPublished) msg += '\n\nThis entry is already published — deleting removes it from the shared dashboard for everyone.';
+    if (!window.confirm(msg)) return;
+    const res = await window.deleteEntry(record);
+    if (res && res.ok) { window.mergeAttendance(); setDataVersion(v => v + 1); }
+    else window.alert('Could not delete: ' + ((res && res.msg) || 'unknown error'));
+  };
+
   if (isMobile) {
     return (
       <React.Fragment>
@@ -4527,7 +4578,7 @@ function App() {
               <StatusBarRight/>
             </div>
             <div className="device-content">
-              <window.MobileView key={dataVersion} refreshVersion={refreshVersion} onAddEntry={() => setShowEntry(true)} onDataChange={handleDataChange} onEditRecord={handleEditRecord} />
+              <window.MobileView key={dataVersion} refreshVersion={refreshVersion} onAddEntry={() => setShowEntry(true)} onDataChange={handleDataChange} onEditRecord={handleEditRecord} onDeleteRecord={handleDeleteRecord} />
             </div>
             <div className="device-home"/>
           </div>
@@ -4552,7 +4603,7 @@ function App() {
 
   return (
     <React.Fragment>
-      <window.MainView key={dataVersion} refreshVersion={refreshVersion} density={t.density} onDataChange={handleDataChange} onEditRecord={handleEditRecord} />
+      <window.MainView key={dataVersion} refreshVersion={refreshVersion} density={t.density} onDataChange={handleDataChange} onEditRecord={handleEditRecord} onDeleteRecord={handleDeleteRecord} />
       <window.AddEntryFAB onClick={() => setShowEntry(true)} />
       {showEntry && (
         <window.DataEntryModal
