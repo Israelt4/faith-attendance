@@ -1173,6 +1173,23 @@
     "excludeFromWeekly": false
   },
   {
+    "date": "2026-06-03",
+    "campus": "CFC",
+    "cat": "Wednesday Service",
+    "main": null,
+    "fk": null,
+    "ms": 724,
+    "msM": null,
+    "total": 724,
+    "weekOf": "2026-06-03",
+    "year": 2026,
+    "month": 6,
+    "quarter": 2,
+    "isManual": true,
+    "eventId": "mainstream_camp",
+    "excludeFromWeekly": false
+  },
+  {
     "date": "2026-06-04",
     "campus": "CFC",
     "cat": "Thursday Service",
