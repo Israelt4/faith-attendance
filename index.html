@@ -1979,6 +1979,7 @@ function TrendsTab({ T, dens }) {
 
   const [metric, setMetric] = React.useState('total');
   const [campus, setCampus] = React.useState('all');
+  const [bucket, setBucket] = React.useState('all'); // 'all' | 'Sunday' | 'Midweek'
   const [activeYears, setActiveYears] = React.useState(() => allYears.slice(0, 2));
 
   const toggleYear = (yr) =>
@@ -1993,8 +1994,9 @@ function TrendsTab({ T, dens }) {
     : w.total;
 
   const weekMap = React.useMemo(() => {
-    const rows = campus === 'all' ? ALL : ALL.filter(r => r.campus === campus);
-    const weeks = window.agg.byWeek(rows.filter(r => !r.excludeFromWeekly));
+    let rows = (campus === 'all' ? ALL : ALL.filter(r => r.campus === campus)).filter(r => !r.excludeFromWeekly);
+    if (bucket !== 'all') rows = rows.filter(r => window.bucketOf(r) === bucket);
+    const weeks = window.agg.byWeek(rows);
     const map = {};
     weeks.forEach(w => {
       if (!window.agg.isCompleteWeek(w.weekOf, TODAY)) return;
@@ -2004,7 +2006,7 @@ function TrendsTab({ T, dens }) {
       map[yr][wk] = metricVal(w);
     });
     return map;
-  }, [campus, metric]);
+  }, [campus, metric, bucket]);
 
   const xPositions = Array.from({ length: 52 }, (_, i) => i + 1);
   const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -2092,6 +2094,14 @@ function TrendsTab({ T, dens }) {
           </div>
         </div>
         <div>
+          <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: '.16em', textTransform: 'uppercase', color: T.ink3, marginBottom: 7 }}>Service time</div>
+          <div style={{ display: 'flex', gap: 5 }}>
+            <Pill active={bucket === 'all'} onClick={() => setBucket('all')}>All</Pill>
+            <Pill active={bucket === 'Sunday'} onClick={() => setBucket('Sunday')}>Sunday</Pill>
+            <Pill active={bucket === 'Midweek'} onClick={() => setBucket('Midweek')}>Midweek</Pill>
+          </div>
+        </div>
+        <div>
           <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: '.16em', textTransform: 'uppercase', color: T.ink3, marginBottom: 7 }}>Years</div>
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
             {allYears.map(yr => (
@@ -2104,7 +2114,7 @@ function TrendsTab({ T, dens }) {
       <div style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 6, padding: dens ? 16 : 20, marginBottom: dens ? 14 : 18 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
           <div>
-            <div style={{ fontFamily: T.display, fontSize: 17, fontWeight: 500 }}>{metricLabel} · {campus === 'all' ? 'All campuses' : campus}</div>
+            <div style={{ fontFamily: T.display, fontSize: 17, fontWeight: 500 }}>{metricLabel} · {campus === 'all' ? 'All campuses' : campus}{bucket !== 'all' ? ` · ${bucket}` : ''}</div>
             <div style={{ fontFamily: T.sans, fontSize: 11.5, color: T.ink3, marginTop: 2 }}>weekly by calendar week, all selected years overlaid</div>
           </div>
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -3161,6 +3171,7 @@ function MTrends({ T }) {
 
   const [metric, setMetric] = React.useState('total');
   const [campus, setCampus] = React.useState('all');
+  const [bucket, setBucket] = React.useState('all'); // 'all' | 'Sunday' | 'Midweek'
   const [activeYears, setActiveYears] = React.useState(() => allYears.slice(0, 2));
 
   const toggleYear = (yr) =>
@@ -3175,8 +3186,9 @@ function MTrends({ T }) {
     : w.total;
 
   const weekMap = React.useMemo(() => {
-    const rows = campus === 'all' ? ALL : ALL.filter(r => r.campus === campus);
-    const weeks = window.agg.byWeek(rows.filter(r => !r.excludeFromWeekly));
+    let rows = (campus === 'all' ? ALL : ALL.filter(r => r.campus === campus)).filter(r => !r.excludeFromWeekly);
+    if (bucket !== 'all') rows = rows.filter(r => window.bucketOf(r) === bucket);
+    const weeks = window.agg.byWeek(rows);
     const map = {};
     weeks.forEach(w => {
       if (!window.agg.isCompleteWeek(w.weekOf, TODAY)) return;
@@ -3186,7 +3198,7 @@ function MTrends({ T }) {
       map[yr][wk] = metricVal(w);
     });
     return map;
-  }, [campus, metric]);
+  }, [campus, metric, bucket]);
 
   const xPositions = Array.from({ length: 52 }, (_, i) => i + 1);
   const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -3262,6 +3274,15 @@ function MTrends({ T }) {
         </div>
       </div>
 
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: '.14em', textTransform: 'uppercase', color: T.ink3, marginBottom: 6 }}>Service time</div>
+        <div style={{ display: 'flex', gap: 5, overflowX: 'auto', paddingBottom: 2 }}>
+          <MPill active={bucket === 'all'} onClick={() => setBucket('all')}>All</MPill>
+          <MPill active={bucket === 'Sunday'} onClick={() => setBucket('Sunday')}>Sunday</MPill>
+          <MPill active={bucket === 'Midweek'} onClick={() => setBucket('Midweek')}>Midweek</MPill>
+        </div>
+      </div>
+
       <div style={{ marginBottom: 14 }}>
         <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: '.14em', textTransform: 'uppercase', color: T.ink3, marginBottom: 6 }}>Years</div>
         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
@@ -3273,7 +3294,7 @@ function MTrends({ T }) {
 
       <div style={{ background: T.card, border: `1px solid ${T.rule}`, borderRadius: 8, padding: 14, marginBottom: 12 }}>
         <div style={{ marginBottom: 10 }}>
-          <div style={{ fontFamily: T.display, fontSize: 14, fontWeight: 500 }}>{metricLabel} · {campus === 'all' ? 'All campuses' : campus}</div>
+          <div style={{ fontFamily: T.display, fontSize: 14, fontWeight: 500 }}>{metricLabel} · {campus === 'all' ? 'All campuses' : campus}{bucket !== 'all' ? ` · ${bucket}` : ''}</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 6 }}>
             {series.map(s => (
               <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: 5, fontFamily: T.sans, fontSize: 10.5, color: T.ink2 }}>
