@@ -249,6 +249,20 @@ window.eventKey = function(r) {
   return r.date + '|' + r.campus + '|' + r.cat;
 };
 
+// Identity for a record. Manual entries carry a unique `id` so multiple entries for the
+// same date/campus/service can coexist (never overwrite each other). Records without an
+// id (base + older published data) fall back to date|campus|service|event.
+window.genEntryId = function() {
+  return 'e_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+};
+window.entryKeyFull = function(r) {
+  return r.id != null ? ('id:' + r.id) : (r.date + '|' + r.campus + '|' + r.cat + '|' + (r.eventId || ''));
+};
+window.sameEntry = function(a, b) {
+  if (a.id != null || b.id != null) return a.id === b.id;
+  return a.date === b.date && a.campus === b.campus && a.cat === b.cat && (a.eventId || '') === (b.eventId || '');
+};
+
 // Override mergeAttendance to apply event labels with per-entry override support.
 // Priority for excludeFromWeekly:
 //   1. Entry's own boolean field (set via Add Entry toggle)
@@ -258,7 +272,7 @@ window.eventKey = function(r) {
 window.mergeAttendance = function() {
   var all = window.BASE_ATTENDANCE.concat(window.PUBLISHED_ENTRIES || []).concat(window.loadStoredEntries());
   var seen = new Map();
-  all.forEach(function(r) { seen.set(r.date + '|' + r.campus + '|' + r.cat, r); });
+  all.forEach(function(r) { seen.set(window.entryKeyFull(r), r); });
   var merged = Array.from(seen.values());
   merged.sort(function(a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
   var assignments = window.loadEventAssignments();
@@ -317,8 +331,8 @@ window.publishEntries = async function() {
 
   var existing = window.PUBLISHED_ENTRIES || [];
   var map = {};
-  existing.forEach(function(e) { map[e.date + '|' + e.campus + '|' + e.cat] = e; });
-  newEntries.forEach(function(e) { map[e.date + '|' + e.campus + '|' + e.cat] = e; });
+  existing.forEach(function(e) { map[window.entryKeyFull(e)] = e; });
+  newEntries.forEach(function(e) { map[window.entryKeyFull(e)] = e; });
   var merged = Object.values(map).sort(function(a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
 
   var sha = null;
@@ -3768,11 +3782,20 @@ function DataEntryModal({ onClose, onSaved, editEntry }) {
   const handleSubmit = () => {
     if (!form.date || !total) return;
     const entry = buildEntry();
+    // Editing preserves the edited record's id; a brand-new add gets a fresh unique id,
+    // so it never overwrites an existing record for the same date/campus/service.
+    if (isEditing) {
+      if (editEntry.isManual && editEntry.id != null) entry.id = editEntry.id;
+    } else if (editingIdx !== null) {
+      if (sessionEntries[editingIdx] && sessionEntries[editingIdx].id != null) entry.id = sessionEntries[editingIdx].id;
+    } else {
+      entry.id = window.genEntryId();
+    }
 
     if (isEditing) {
       const stored = window.loadStoredEntries();
       if (editEntry.isManual) {
-        const idx = stored.findIndex(r => r.date === editEntry.date && r.campus === editEntry.campus && r.cat === editEntry.cat);
+        const idx = stored.findIndex(r => window.sameEntry(r, editEntry));
         if (idx !== -1) stored[idx] = entry; else stored.push(entry);
       } else {
         stored.push(entry);
@@ -3788,7 +3811,7 @@ function DataEntryModal({ onClose, onSaved, editEntry }) {
       const updatedSession = [...sessionEntries];
       updatedSession[editingIdx] = entry;
       const stored = window.loadStoredEntries();
-      const storeIdx = stored.findIndex(r => r.isManual && r.date === origEntry.date && r.campus === origEntry.campus && r.cat === origEntry.cat);
+      const storeIdx = stored.findIndex(r => r.isManual && window.sameEntry(r, origEntry));
       if (storeIdx !== -1) stored[storeIdx] = entry; else stored.push(entry);
       localStorage.setItem('fc_attendance_entries', JSON.stringify(stored));
       setSessionEntries(updatedSession);
@@ -3816,7 +3839,7 @@ function DataEntryModal({ onClose, onSaved, editEntry }) {
   const handleDeleteSession = (idx) => {
     const entry = sessionEntries[idx];
     const all = window.loadStoredEntries();
-    const storeIdx = all.findIndex(r => r.isManual && r.date === entry.date && r.campus === entry.campus && r.cat === entry.cat);
+    const storeIdx = all.findIndex(r => r.isManual && window.sameEntry(r, entry));
     if (storeIdx !== -1) { all.splice(storeIdx, 1); localStorage.setItem('fc_attendance_entries', JSON.stringify(all)); }
     setSessionEntries((prev) => prev.filter((_, i) => i !== idx));
     if (editingIdx === idx) resetForm();
