@@ -3836,6 +3836,25 @@
     "id": "e_msoscafx_2wz7rk"
   },
   {
+    "date": "2026-08-05",
+    "campus": "CFRC",
+    "cat": "Wednesday Service",
+    "main": 78,
+    "fk": null,
+    "ms": null,
+    "msM": null,
+    "total": 78,
+    "weekOf": "2026-08-05",
+    "year": 2026,
+    "month": 8,
+    "quarter": 3,
+    "isManual": true,
+    "eventId": null,
+    "excludeFromWeekly": false,
+    "notes": "",
+    "id": "e_msoyerpx_3a6wy8"
+  },
+  {
     "date": "2026-08-06",
     "campus": "CFC",
     "cat": "Thursday Service",
@@ -4043,24 +4062,5 @@
     "excludeFromWeekly": false,
     "notes": "",
     "id": "e_msoshby0_ccnttk"
-  },
-  {
-    "date": "2026-08-09",
-    "campus": "CFRC",
-    "cat": "Wednesday Service",
-    "main": 78,
-    "fk": null,
-    "ms": null,
-    "msM": null,
-    "total": 78,
-    "weekOf": "2026-08-05",
-    "year": 2026,
-    "month": 8,
-    "quarter": 3,
-    "isManual": true,
-    "eventId": null,
-    "excludeFromWeekly": false,
-    "notes": "",
-    "id": "e_msoyerpx_3a6wy8"
   }
 ]
