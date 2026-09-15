@@ -5033,6 +5033,25 @@
     "id": "e_mtss8dnw_mqp65p"
   },
   {
+    "date": "2026-09-02",
+    "campus": "RBL",
+    "cat": "Wednesday Service",
+    "main": 53,
+    "fk": null,
+    "ms": 44,
+    "msM": null,
+    "total": 97,
+    "weekOf": "2026-09-02",
+    "year": 2026,
+    "month": 9,
+    "quarter": 3,
+    "isManual": true,
+    "eventId": null,
+    "excludeFromWeekly": false,
+    "notes": "",
+    "id": "e_mtssdv43_nuu4y3"
+  },
+  {
     "date": "2026-09-03",
     "campus": "CFC",
     "cat": "Thursday Service",
@@ -5240,24 +5259,5 @@
     "excludeFromWeekly": false,
     "notes": "",
     "id": "e_mtss873a_twzj0p"
-  },
-  {
-    "date": "2026-09-09",
-    "campus": "RBL",
-    "cat": "Wednesday Service",
-    "main": 53,
-    "fk": null,
-    "ms": 44,
-    "msM": null,
-    "total": 97,
-    "weekOf": "2026-09-09",
-    "year": 2026,
-    "month": 9,
-    "quarter": 3,
-    "isManual": true,
-    "eventId": null,
-    "excludeFromWeekly": false,
-    "notes": "",
-    "id": "e_mtssdv43_nuu4y3"
   }
 ]
